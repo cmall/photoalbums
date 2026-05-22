@@ -97,6 +97,17 @@ export type LibraryResponse = {
   folders: LibraryFolder[];
 };
 
+export async function fetchUnimportedFolders(): Promise<LibraryFolder[]> {
+  const r = await apiFetch("/api/library/unimported");
+  if (!r.ok) throw new Error(await readApiError(r));
+  const j = (await r.json()) as { folders: Omit<LibraryFolder, "photos" | "photosLoaded">[] };
+  return j.folders.map((f) => ({
+    ...f,
+    photos: f.previewPhotos,
+    photosLoaded: false,
+  }));
+}
+
 export async function syncLibraryApi() {
   const r = await apiFetch("/api/library/sync", { method: "POST" });
   if (!r.ok) throw new Error(await readApiError(r));

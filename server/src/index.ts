@@ -27,6 +27,7 @@ import {
   getLibrary,
   getLibrarySummary,
   getRootPhotosFromDisk,
+  getUnimportedFoldersOnDisk,
   movePhoto,
   refreshDerivativesForPhoto,
   renameFolder,
@@ -36,7 +37,7 @@ import {
 } from "./library.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
 import { openFileInPhotoshop, resolveAbsForExternalEditor } from "./open-photoshop.js";
-import { loadLibraryEnrichment } from "./library-enrich.js";
+import { loadLibraryEnrichmentForRels } from "./library-enrich.js";
 import { registerAuth } from "./auth.js";
 
 const trimEmpty = z.preprocess(
@@ -164,7 +165,7 @@ export async function buildServer() {
 
   app.get("/api/library/summary", async () => {
     const db = getDb();
-    const summary = await getLibrarySummary();
+    const summary = getLibrarySummary();
     return {
       rootDefaultYear: defaultYearForFolder(db, null),
       rootPhotoCount: summary.rootPhotoCount,
@@ -176,13 +177,27 @@ export async function buildServer() {
     };
   });
 
+  app.get("/api/library/unimported", async () => {
+    const db = getDb();
+    const folders = await getUnimportedFoldersOnDisk();
+    return {
+      folders: folders.map((f) => ({
+        ...f,
+        defaultYear: defaultYearForFolder(db, f.name),
+      })),
+    };
+  });
+
   app.get("/api/library/album", async (req, reply) => {
     const q = req.query as { folder?: string };
     const folder = q.folder?.trim();
     if (!folder) return reply.status(400).send({ error: "folder required" });
     const db = getDb();
-    const { enrich } = loadLibraryEnrichment(db);
     const photos = await getFolderPhotos(folder);
+    const { enrich } = loadLibraryEnrichmentForRels(
+      db,
+      photos.map((p) => p.relPath),
+    );
     return {
       folder,
       defaultYear: defaultYearForFolder(db, folder),
@@ -192,8 +207,11 @@ export async function buildServer() {
 
   app.get("/api/library/root-photos", async () => {
     const db = getDb();
-    const { enrich } = loadLibraryEnrichment(db);
     const photos = await getRootPhotosFromDisk();
+    const { enrich } = loadLibraryEnrichmentForRels(
+      db,
+      photos.map((p) => p.relPath),
+    );
     return {
       rootDefaultYear: defaultYearForFolder(db, null),
       photos: enrich(photos),
@@ -207,8 +225,11 @@ export async function buildServer() {
       req.log.warn("GET /api/library?folder= is deprecated; use /api/library/album");
       const folder = q.folder.trim();
       const db = getDb();
-      const { enrich } = loadLibraryEnrichment(db);
       const photos = await getFolderPhotos(folder);
+      const { enrich } = loadLibraryEnrichmentForRels(
+        db,
+        photos.map((p) => p.relPath),
+      );
       return {
         rootDefaultYear: defaultYearForFolder(db, null),
         rootPhotos: [],
@@ -223,10 +244,10 @@ export async function buildServer() {
         ],
       };
     }
-    if (q.sync === "1") await syncAssetsFromDisk();
+    if (q.sync === "1") void syncAssetsFromDisk();
     reply.header("X-Albums-Deprecated", "use /api/library/summary");
     const db = getDb();
-    const summary = await getLibrarySummary();
+    const summary = getLibrarySummary();
     return {
       rootDefaultYear: defaultYearForFolder(db, null),
       rootPhotoCount: summary.rootPhotoCount,
@@ -554,11 +575,17 @@ export async function start() {
     "Albums server config",
   );
   await server.listen({ port: config.port, host: config.host });
-  /** Full scan + thumbnails can take a long time; bind the port first so dev clients can connect immediately. */
-  void syncAssetsFromDisk().catch((err) => {
-    console.error("Background library sync failed:", err);
-    server.log.error({ err }, "Background library sync failed");
-  });
+  /** Defer thumbnail sync so API requests are not competing with disk I/O on startup. */
+  const syncDelayMs = Number(
+    process.env.SYNC_START_DELAY_MS ?? (process.env.NODE_ENV === "production" ? 120_000 : 5_000),
+  );
+  setTimeout(() => {
+    void syncAssetsFromDisk().catch((err) => {
+      console.error("Background library sync failed:", err);
+      server.log.error({ err }, "Background library sync failed");
+    });
+  }, syncDelayMs);
+  server.log.info({ syncDelayMs }, "Background library sync scheduled");
 }
 
 start().catch((err) => {

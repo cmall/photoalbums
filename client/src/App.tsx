@@ -15,6 +15,7 @@ import {
   fetchLibrarySummary,
   fetchAlbumPhotos,
   fetchRootPhotosApi,
+  fetchUnimportedFolders,
   syncLibraryApi,
   getImportJob,
   mediaUrl,
@@ -218,7 +219,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     setErr(null);
     setLibraryLoading(true);
     try {
-      if (sync) await syncLibraryApi();
+      if (sync) void syncLibraryApi();
       const summary = await fetchLibrarySummary();
       albumCacheRef.current.clear();
       setRootPhotos(summary.rootPreviewPhotos);
@@ -295,6 +296,23 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     const f = folders.find((x) => x.name === galleryScope);
     if (!f || f.needsImport) setGalleryScope("");
   }, [folders, galleryScope]);
+
+  useEffect(() => {
+    if (appView !== "manage") return;
+    void fetchUnimportedFolders()
+      .then((unimported) => {
+        setFolders((prev) => {
+          const byName = new Map(prev.map((f) => [f.name, f]));
+          for (const u of unimported) {
+            if (!byName.has(u.name)) byName.set(u.name, u);
+          }
+          return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+        });
+      })
+      .catch((e) => {
+        if (!(e instanceof AuthRequiredError)) setErr(String(e));
+      });
+  }, [appView]);
 
   useEffect(() => {
     if (!importJob) {

@@ -64,13 +64,12 @@ export type LibraryFolderSummary = {
   diskPhotoCount?: number;
 };
 
-/** Fast catalog overview from SQLite; only scans disk for not-yet-imported folders. */
-export async function getLibrarySummary(): Promise<{
+/** Fast catalog overview from SQLite only (no photo-root disk access). */
+export function getLibrarySummary(): {
   rootPhotoCount: number;
   rootPreviewPhotos: GroupedPrimary[];
   folders: LibraryFolderSummary[];
-}> {
-  await fs.mkdir(config.photoRoot, { recursive: true });
+} {
   const db = getDb();
   const imported = getImportedFolderNames();
 
@@ -91,21 +90,34 @@ export async function getLibrarySummary(): Promise<{
     )
     .all() as { folder_name: string; photo_count: number }[];
 
+  const previewRows = db
+    .prepare(
+      `WITH ranked AS (
+         SELECT rel_path, filename, folder_name,
+                ROW_NUMBER() OVER (PARTITION BY folder_name ORDER BY filename) AS rn
+         FROM assets WHERE folder_name IS NOT NULL
+       )
+       SELECT rel_path, filename, folder_name FROM ranked WHERE rn <= 4`,
+    )
+    .all() as { rel_path: string; filename: string; folder_name: string | null }[];
+
+  const previewsByFolder = new Map<string, GroupedPrimary[]>();
+  for (const row of previewRows) {
+    if (!row.folder_name) continue;
+    const arr = previewsByFolder.get(row.folder_name) ?? [];
+    arr.push(dbRowToPreviewPhoto(row));
+    previewsByFolder.set(row.folder_name, arr);
+  }
+
   const folders: LibraryFolderSummary[] = [];
   const counted = new Set<string>();
 
   for (const row of folderCounts) {
     counted.add(row.folder_name);
-    const previews = db
-      .prepare(
-        `SELECT rel_path, filename, folder_name FROM assets
-         WHERE folder_name = ? ORDER BY filename LIMIT 4`,
-      )
-      .all(row.folder_name) as { rel_path: string; filename: string; folder_name: string | null }[];
     folders.push({
       name: row.folder_name,
       photoCount: row.photo_count,
-      previewPhotos: previews.map(dbRowToPreviewPhoto),
+      previewPhotos: previewsByFolder.get(row.folder_name) ?? [],
       needsImport: !imported.has(row.folder_name),
     });
   }
@@ -120,11 +132,24 @@ export async function getLibrarySummary(): Promise<{
     });
   }
 
+  folders.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    rootPhotoCount: rootCount.n,
+    rootPreviewPhotos: rootPreviews.map(dbRowToPreviewPhoto),
+    folders,
+  };
+}
+
+/** Scan disk for folders not yet imported (slow on network volumes — call separately). */
+export async function getUnimportedFoldersOnDisk(): Promise<LibraryFolderSummary[]> {
+  await fs.mkdir(config.photoRoot, { recursive: true });
+  const imported = getImportedFolderNames();
   const entries = await listRootEntries();
   const unimported = entries.filter(
     (e) => e.isDirectory() && !e.name.startsWith(".") && !imported.has(e.name),
   );
-  const unimportedResults = await Promise.all(
+  const results = await Promise.all(
     unimported.map(async (ent): Promise<LibraryFolderSummary | null> => {
       const dirAbs = path.join(config.photoRoot, ent.name);
       try {
@@ -142,14 +167,7 @@ export async function getLibrarySummary(): Promise<{
       }
     }),
   );
-  folders.push(...unimportedResults.filter((f): f is LibraryFolderSummary => f != null));
-  folders.sort((a, b) => a.name.localeCompare(b.name));
-
-  return {
-    rootPhotoCount: rootCount.n,
-    rootPreviewPhotos: rootPreviews.map(dbRowToPreviewPhoto),
-    folders,
-  };
+  return results.filter((f): f is LibraryFolderSummary => f != null).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getFolderPhotos(folderName: string): Promise<GroupedPrimary[]> {
