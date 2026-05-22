@@ -9,11 +9,12 @@ import {
   displaySourceAbsFromPrimaryRel,
 } from "./metadata.js";
 
-/** Set to `0` or `false` to disable building missing WebP from the photo library. */
+/** On-demand WebP builds from the photo library. Off in production by default (slow volumes). */
 export function thumbOnDemandEnabled() {
   const v = process.env.ENABLE_ON_DEMAND_THUMBNAILS;
+  if (v === "1" || v === "true") return true;
   if (v === "0" || v === "false") return false;
-  return true;
+  return process.env.NODE_ENV !== "production";
 }
 
 function tryExisting(abs: string): string | null {

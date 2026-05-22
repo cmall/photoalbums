@@ -1,5 +1,4 @@
 import { getDb } from "./db.js";
-import { companionsFromDisk } from "./metadata.js";
 import type { GroupedPrimary } from "./photo-groups.js";
 
 type AssetCatalogRow = {
@@ -11,13 +10,12 @@ type AssetCatalogRow = {
 };
 
 export function assetRowToGroupedPrimary(row: AssetCatalogRow): GroupedPrimary {
-  const disk = companionsFromDisk(row.rel_path);
   return {
     relPath: row.rel_path,
     filename: row.filename,
     folder: row.folder_name,
-    thumbSourceRel: disk.thumbSourceRel,
-    backRelPath: disk.backRelPath,
+    thumbSourceRel: row.thumb_source_rel ?? row.rel_path,
+    backRelPath: row.back_rel_path ?? null,
   };
 }
 
@@ -38,7 +36,7 @@ export function getRootPhotosFromDb(): GroupedPrimary[] {
   return rows.map(assetRowToGroupedPrimary);
 }
 
-/** One catalog photo by primary rel path (companions resolved from disk). */
+/** One catalog photo by primary rel path. */
 export function getPhotoByRelFromDb(relPath: string): GroupedPrimary | null {
   const row = getDb()
     .prepare(`${ASSET_CATALOG_SQL} WHERE rel_path = ?`)

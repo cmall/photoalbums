@@ -377,7 +377,7 @@ async function runSyncAssetsFromDisk() {
       seen.add(p.relPath);
       await syncOneAsset(p);
       syncStatus.done = i + 1;
-      if (i % 5 === 4) await new Promise<void>((r) => setImmediate(r));
+      if (i % 3 === 2) await new Promise<void>((r) => setImmediate(r));
     }
 
     const rows = db.prepare("SELECT id, rel_path FROM assets").all() as {

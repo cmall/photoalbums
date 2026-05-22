@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LibraryPhoto } from "./api";
 import { mediaUrl } from "./api";
+import { LazyPhotoImg } from "./LazyPhotoImg";
 
 function truncate(s: string, max: number) {
   const t = s.trim();
@@ -8,7 +9,7 @@ function truncate(s: string, max: number) {
   return `${t.slice(0, max - 1)}…`;
 }
 
-const BATCH_SIZE = 48;
+const BATCH_SIZE = 24;
 
 export function MasonryGallery({
   photos,
@@ -56,7 +57,7 @@ export function MasonryGallery({
           <article key={p.relPath} className="masonry-item">
             <button type="button" className="masonry-card" onClick={() => onOpenIndex(i)}>
               <div className="masonry-img-wrap">
-                <img src={mediaUrl(p.relPath, "thumb", imageCacheEpoch)} alt="" loading="lazy" decoding="async" />
+                <LazyPhotoImg src={mediaUrl(p.relPath, "thumb", imageCacheEpoch)} className="" />
               </div>
               {(desc || hasPeople) && (
                 <div className="masonry-card-meta">

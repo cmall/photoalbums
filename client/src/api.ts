@@ -14,7 +14,14 @@ export class AuthRequiredError extends Error {
 }
 
 function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
-  return fetch(input, { credentials: "include", ...init });
+  if (init?.signal) {
+    return fetch(input, { credentials: "include", ...init });
+  }
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 90_000);
+  return fetch(input, { credentials: "include", ...init, signal: controller.signal }).finally(() => {
+    window.clearTimeout(timer);
+  });
 }
 
 export type AuthStatus = { required: boolean; authenticated: boolean };

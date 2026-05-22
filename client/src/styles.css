@@ -315,11 +315,25 @@ body {
   background: #ece8e2;
 }
 
-.masonry-card img {
+.masonry-card img,
+.masonry-img-wrap .photo-img-placeholder {
   width: 100%;
   height: auto;
   display: block;
   vertical-align: middle;
+}
+
+.photo-img-placeholder {
+  min-height: 160px;
+  background: linear-gradient(110deg, #ece8e2 8%, #f5f2ed 18%, #ece8e2 33%);
+  background-size: 200% 100%;
+  animation: photo-placeholder-shimmer 1.2s linear infinite;
+}
+
+@keyframes photo-placeholder-shimmer {
+  to {
+    background-position-x: -200%;
+  }
 }
 
 .masonry-card-meta {
