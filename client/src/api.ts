@@ -75,10 +75,20 @@ export type LibraryPhoto = {
 export type LibraryFolder = {
   name: string;
   photos: LibraryPhoto[];
+  previewPhotos: LibraryPhoto[];
+  photoCount: number;
+  photosLoaded: boolean;
   defaultYear: number | null;
   /** Folder exists on disk but not yet imported into the catalog. */
   needsImport: boolean;
   diskPhotoCount?: number;
+};
+
+export type LibrarySummaryResponse = {
+  rootDefaultYear: number | null;
+  rootPhotoCount: number;
+  rootPreviewPhotos: LibraryPhoto[];
+  folders: Omit<LibraryFolder, "photos" | "photosLoaded">[];
 };
 
 export type LibraryResponse = {
@@ -87,10 +97,44 @@ export type LibraryResponse = {
   folders: LibraryFolder[];
 };
 
-export async function fetchLibrary(sync?: boolean): Promise<LibraryResponse> {
-  const r = await apiFetch("/api/library" + (sync ? "?sync=1" : ""));
+export async function syncLibraryApi() {
+  const r = await apiFetch("/api/library/sync", { method: "POST" });
   if (!r.ok) throw new Error(await readApiError(r));
-  return r.json() as Promise<LibraryResponse>;
+}
+
+export async function fetchLibrarySummary(): Promise<LibrarySummaryResponse> {
+  const r = await apiFetch("/api/library/summary");
+  if (!r.ok) throw new Error(await readApiError(r));
+  return r.json() as Promise<LibrarySummaryResponse>;
+}
+
+export async function fetchAlbumPhotos(folder: string): Promise<LibraryPhoto[]> {
+  const r = await apiFetch(`/api/library/album?folder=${encodeURIComponent(folder)}`);
+  if (!r.ok) throw new Error(await readApiError(r));
+  const j = (await r.json()) as { photos: LibraryPhoto[] };
+  return j.photos;
+}
+
+export async function fetchRootPhotosApi(): Promise<LibraryPhoto[]> {
+  const r = await apiFetch("/api/library/root-photos");
+  if (!r.ok) throw new Error(await readApiError(r));
+  const j = (await r.json()) as { photos: LibraryPhoto[] };
+  return j.photos;
+}
+
+/** @deprecated Use fetchLibrarySummary + fetchAlbumPhotos. */
+export async function fetchLibrary(sync?: boolean): Promise<LibraryResponse> {
+  if (sync) await syncLibraryApi();
+  const summary = await fetchLibrarySummary();
+  return {
+    rootDefaultYear: summary.rootDefaultYear,
+    rootPhotos: summary.rootPreviewPhotos,
+    folders: summary.folders.map((f) => ({
+      ...f,
+      photos: f.previewPhotos,
+      photosLoaded: false,
+    })),
+  };
 }
 
 export type HealthResponse = {

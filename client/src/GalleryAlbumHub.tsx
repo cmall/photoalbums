@@ -1,7 +1,7 @@
 import type { LibraryPhoto } from "./api";
 import { mediaUrl } from "./api";
 
-export type GalleryAlbumHubEntry = { name: string; photos: LibraryPhoto[] };
+export type GalleryAlbumHubEntry = { name: string; photos: LibraryPhoto[]; photoCount: number };
 
 export function GalleryAlbumHub({
   albums,
@@ -37,7 +37,7 @@ export function GalleryAlbumHub({
               >
                 {album.name}
               </button>
-              <span className="gallery-album-block-count">{album.photos.length} photos</span>
+              <span className="gallery-album-block-count">{album.photoCount} photos</span>
             </div>
             <div className="gallery-album-thumb-grid">
               {thumbs.map((p, i) => (

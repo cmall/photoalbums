@@ -22,8 +22,11 @@ import { ensureDerivatives } from "./images.js";
 import {
   createFolder,
   deleteBackScanForPrimary,
+  getFolderPhotos,
   getImportJob,
   getLibrary,
+  getLibrarySummary,
+  getRootPhotosFromDisk,
   movePhoto,
   refreshDerivativesForPhoto,
   renameFolder,
@@ -33,6 +36,7 @@ import {
 } from "./library.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
 import { openFileInPhotoshop, resolveAbsForExternalEditor } from "./open-photoshop.js";
+import { loadLibraryEnrichment } from "./library-enrich.js";
 import { registerAuth } from "./auth.js";
 
 const trimEmpty = z.preprocess(
@@ -158,78 +162,85 @@ export async function buildServer() {
     }
   });
 
-  app.get("/api/library", async (req) => {
-    const q = req.query as { sync?: string };
-    if (q.sync === "1") await syncAssetsFromDisk();
-    const lib = await getLibrary();
+  app.get("/api/library/summary", async () => {
     const db = getDb();
-    const metaFor = db
-      .prepare(
-        `SELECT a.rel_path as relPath, p.id as personId, p.full_name as fullName,
-         t.id as tagId, t.norm_x as normX, t.norm_y as normY, t.norm_w as normW, t.norm_h as normH
-         FROM person_tags t
-         JOIN assets a ON a.id = t.asset_id
-         JOIN persons p ON p.id = t.person_id`,
-      )
-      .all() as {
-      relPath: string;
-      personId: string;
-      fullName: string;
-      tagId: string;
-      normX: number;
-      normY: number;
-      normW: number | null;
-      normH: number | null;
-    }[];
-
-    const tagsByRel = new Map<string, typeof metaFor>();
-    for (const row of metaFor) {
-      const arr = tagsByRel.get(row.relPath) ?? [];
-      arr.push(row);
-      tagsByRel.set(row.relPath, arr);
-    }
-
-    type DbMetaRow = {
-      rel_path: string;
-      event_date: string | null;
-      location: string | null;
-      description: string | null;
-    };
-    const dbMetaRows = db
-      .prepare(`SELECT rel_path, event_date, location, description FROM assets`)
-      .all() as DbMetaRow[];
-    const metaByRel = new Map<string, ReturnType<typeof photoMetadataFromDbRow>>();
-    for (const r of dbMetaRows) {
-      metaByRel.set(
-        r.rel_path,
-        photoMetadataFromDbRow({
-          event_date: r.event_date,
-          location: r.location,
-          description: r.description,
-        }),
-      );
-    }
-
-    const sortTags = (relPath: string) =>
-      [...(tagsByRel.get(relPath) ?? [])].sort((a, b) => a.normX - b.normX);
-
-    const enrich = (photos: { relPath: string }[]) =>
-      photos.map((ph) => ({
-        ...ph,
-        metadata: metaByRel.get(ph.relPath) ?? {},
-        tags: sortTags(ph.relPath),
-      }));
-
-    const rootDefaultYear = defaultYearForFolder(db, null);
-
+    const summary = await getLibrarySummary();
     return {
-      rootDefaultYear,
-      rootPhotos: enrich(lib.rootPhotos),
-      folders: lib.folders.map((f) => ({
+      rootDefaultYear: defaultYearForFolder(db, null),
+      rootPhotoCount: summary.rootPhotoCount,
+      rootPreviewPhotos: summary.rootPreviewPhotos,
+      folders: summary.folders.map((f) => ({
         ...f,
         defaultYear: defaultYearForFolder(db, f.name),
-        photos: enrich(f.photos),
       })),
+    };
+  });
+
+  app.get("/api/library/album", async (req, reply) => {
+    const q = req.query as { folder?: string };
+    const folder = q.folder?.trim();
+    if (!folder) return reply.status(400).send({ error: "folder required" });
+    const db = getDb();
+    const { enrich } = loadLibraryEnrichment(db);
+    const photos = await getFolderPhotos(folder);
+    return {
+      folder,
+      defaultYear: defaultYearForFolder(db, folder),
+      photos: enrich(photos),
+    };
+  });
+
+  app.get("/api/library/root-photos", async () => {
+    const db = getDb();
+    const { enrich } = loadLibraryEnrichment(db);
+    const photos = await getRootPhotosFromDisk();
+    return {
+      rootDefaultYear: defaultYearForFolder(db, null),
+      photos: enrich(photos),
+    };
+  });
+
+  /** @deprecated Prefer /api/library/summary plus per-album loads. */
+  app.get("/api/library", async (req, reply) => {
+    const q = req.query as { sync?: string; folder?: string };
+    if (q.folder?.trim()) {
+      req.log.warn("GET /api/library?folder= is deprecated; use /api/library/album");
+      const folder = q.folder.trim();
+      const db = getDb();
+      const { enrich } = loadLibraryEnrichment(db);
+      const photos = await getFolderPhotos(folder);
+      return {
+        rootDefaultYear: defaultYearForFolder(db, null),
+        rootPhotos: [],
+        folders: [
+          {
+            name: folder,
+            defaultYear: defaultYearForFolder(db, folder),
+            photos: enrich(photos),
+            needsImport: false,
+            photoCount: photos.length,
+          },
+        ],
+      };
+    }
+    if (q.sync === "1") await syncAssetsFromDisk();
+    reply.header("X-Albums-Deprecated", "use /api/library/summary");
+    const db = getDb();
+    const summary = await getLibrarySummary();
+    return {
+      rootDefaultYear: defaultYearForFolder(db, null),
+      rootPhotoCount: summary.rootPhotoCount,
+      rootPreviewPhotos: summary.rootPreviewPhotos,
+      folders: summary.folders.map((f) => ({
+        name: f.name,
+        defaultYear: defaultYearForFolder(db, f.name),
+        photoCount: f.photoCount,
+        previewPhotos: f.previewPhotos,
+        needsImport: f.needsImport,
+        diskPhotoCount: f.diskPhotoCount,
+        photos: f.previewPhotos,
+      })),
+      rootPhotos: summary.rootPreviewPhotos,
     };
   });
 

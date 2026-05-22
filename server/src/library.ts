@@ -42,6 +42,133 @@ function getImportedFolderNames(): Set<string> {
   return new Set(rows.map((r) => r.folder_name));
 }
 
+function dbRowToPreviewPhoto(row: {
+  rel_path: string;
+  filename: string;
+  folder_name: string | null;
+}): GroupedPrimary {
+  return {
+    relPath: row.rel_path,
+    filename: row.filename,
+    folder: row.folder_name,
+    thumbSourceRel: row.rel_path,
+    backRelPath: null,
+  };
+}
+
+export type LibraryFolderSummary = {
+  name: string;
+  photoCount: number;
+  previewPhotos: GroupedPrimary[];
+  needsImport: boolean;
+  diskPhotoCount?: number;
+};
+
+/** Fast catalog overview from SQLite; only scans disk for not-yet-imported folders. */
+export async function getLibrarySummary(): Promise<{
+  rootPhotoCount: number;
+  rootPreviewPhotos: GroupedPrimary[];
+  folders: LibraryFolderSummary[];
+}> {
+  await fs.mkdir(config.photoRoot, { recursive: true });
+  const db = getDb();
+  const imported = getImportedFolderNames();
+
+  const rootCount = db.prepare(`SELECT COUNT(*) as n FROM assets WHERE folder_name IS NULL`).get() as {
+    n: number;
+  };
+  const rootPreviews = db
+    .prepare(
+      `SELECT rel_path, filename, folder_name FROM assets
+       WHERE folder_name IS NULL ORDER BY filename LIMIT 4`,
+    )
+    .all() as { rel_path: string; filename: string; folder_name: string | null }[];
+
+  const folderCounts = db
+    .prepare(
+      `SELECT folder_name, COUNT(*) as photo_count FROM assets
+       WHERE folder_name IS NOT NULL GROUP BY folder_name`,
+    )
+    .all() as { folder_name: string; photo_count: number }[];
+
+  const folders: LibraryFolderSummary[] = [];
+  const counted = new Set<string>();
+
+  for (const row of folderCounts) {
+    counted.add(row.folder_name);
+    const previews = db
+      .prepare(
+        `SELECT rel_path, filename, folder_name FROM assets
+         WHERE folder_name = ? ORDER BY filename LIMIT 4`,
+      )
+      .all(row.folder_name) as { rel_path: string; filename: string; folder_name: string | null }[];
+    folders.push({
+      name: row.folder_name,
+      photoCount: row.photo_count,
+      previewPhotos: previews.map(dbRowToPreviewPhoto),
+      needsImport: !imported.has(row.folder_name),
+    });
+  }
+
+  for (const name of imported) {
+    if (counted.has(name)) continue;
+    folders.push({
+      name,
+      photoCount: 0,
+      previewPhotos: [],
+      needsImport: false,
+    });
+  }
+
+  const entries = await listRootEntries();
+  const unimported = entries.filter(
+    (e) => e.isDirectory() && !e.name.startsWith(".") && !imported.has(e.name),
+  );
+  const unimportedResults = await Promise.all(
+    unimported.map(async (ent): Promise<LibraryFolderSummary | null> => {
+      const dirAbs = path.join(config.photoRoot, ent.name);
+      try {
+        const sub = await fs.readdir(dirAbs, { withFileTypes: true });
+        const fileNames = sub.filter((f) => f.isFile()).map((f) => f.name);
+        return {
+          name: ent.name,
+          photoCount: 0,
+          previewPhotos: [],
+          needsImport: true,
+          diskPhotoCount: groupFolderImages(fileNames, ent.name).length,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  folders.push(...unimportedResults.filter((f): f is LibraryFolderSummary => f != null));
+  folders.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    rootPhotoCount: rootCount.n,
+    rootPreviewPhotos: rootPreviews.map(dbRowToPreviewPhoto),
+    folders,
+  };
+}
+
+export async function getFolderPhotos(folderName: string): Promise<GroupedPrimary[]> {
+  if (!getImportedFolderNames().has(folderName)) return [];
+  const dirAbs = path.join(config.photoRoot, folderName);
+  const names = await fs.readdir(dirAbs);
+  const photos = groupFolderImages(names, folderName);
+  photos.sort((a, b) => a.filename.localeCompare(b.filename));
+  return photos;
+}
+
+export async function getRootPhotosFromDisk(): Promise<GroupedPrimary[]> {
+  const entries = await listRootEntries();
+  const rootNames = entries.filter((e) => e.isFile()).map((e) => e.name);
+  const photos = groupFolderImages(rootNames, null);
+  photos.sort((a, b) => a.filename.localeCompare(b.filename));
+  return photos;
+}
+
 export async function getLibrary(): Promise<{
   rootPhotos: LibraryPhoto[];
   folders: LibraryFolder[];

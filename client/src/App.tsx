@@ -12,7 +12,10 @@ import {
   createPerson,
   deleteTag,
   fetchHealth,
-  fetchLibrary,
+  fetchLibrarySummary,
+  fetchAlbumPhotos,
+  fetchRootPhotosApi,
+  syncLibraryApi,
   getImportJob,
   mediaUrl,
   patchMetadata,
@@ -27,7 +30,6 @@ import {
   startFolderImportApi,
   type LibraryFolder,
   type LibraryPhoto,
-  type LibraryResponse,
   type Person,
   type PhotoMetadata,
   type TagInfo,
@@ -111,16 +113,37 @@ function PhotoTile({
   );
 }
 
-function findPhotoInLibrary(lib: LibraryResponse, relPath: string): LibraryPhoto | null {
-  for (const p of lib.rootPhotos) {
+function findPhotoInFolders(
+  rootPhotos: LibraryPhoto[],
+  folders: LibraryFolder[],
+  relPath: string,
+): LibraryPhoto | null {
+  for (const p of rootPhotos) {
     if (p.relPath === relPath) return p;
   }
-  for (const folder of lib.folders) {
+  for (const folder of folders) {
     for (const p of folder.photos) {
+      if (p.relPath === relPath) return p;
+    }
+    for (const p of folder.previewPhotos) {
       if (p.relPath === relPath) return p;
     }
   }
   return null;
+}
+
+function previewPhotoFromRel(relPath: string): LibraryPhoto {
+  const filename = relPath.split("/").pop() ?? relPath;
+  const folder = relPath.includes("/") ? relPath.split("/")[0]! : null;
+  return {
+    relPath,
+    filename,
+    folder,
+    thumbSourceRel: relPath,
+    backRelPath: null,
+    metadata: {},
+    tags: [],
+  };
 }
 
 type OpenAlbum = string;
@@ -129,6 +152,7 @@ type AlbumRowModel = {
   id: OpenAlbum;
   title: string;
   photos: LibraryPhoto[];
+  photoCount: number;
   folderForRename: string;
   defaultYear: number | null;
   needsImport: boolean;
@@ -168,18 +192,52 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const [openInPhotoshopEnabled, setOpenInPhotoshopEnabled] = useState(false);
   const [imageCacheEpoch, setImageCacheEpoch] = useState(0);
   const bumpImageCache = useCallback(() => setImageCacheEpoch((n) => n + 1), []);
+  const albumCacheRef = useRef<Map<string, LibraryPhoto[]>>(new Map());
+  const [rootPhotosLoaded, setRootPhotosLoaded] = useState(false);
+
+  const loadAlbumPhotos = useCallback(async (folderName: string): Promise<LibraryPhoto[]> => {
+    const cached = albumCacheRef.current.get(folderName);
+    if (cached) return cached;
+    const photos = await fetchAlbumPhotos(folderName);
+    albumCacheRef.current.set(folderName, photos);
+    setFolders((prev) =>
+      prev.map((f) => (f.name === folderName ? { ...f, photos, photosLoaded: true } : f)),
+    );
+    return photos;
+  }, []);
+
+  const loadRootPhotos = useCallback(async (): Promise<LibraryPhoto[]> => {
+    if (rootPhotosLoaded) return rootPhotos;
+    const photos = await fetchRootPhotosApi();
+    setRootPhotos(photos);
+    setRootPhotosLoaded(true);
+    return photos;
+  }, [rootPhotos, rootPhotosLoaded]);
 
   const load = useCallback(async (sync = false) => {
     setErr(null);
     setLibraryLoading(true);
     try {
-      const lib = await fetchLibrary(sync);
-      setRootPhotos(lib.rootPhotos);
-      setRootDefaultYear(lib.rootDefaultYear);
-      setFolders(lib.folders);
+      if (sync) await syncLibraryApi();
+      const summary = await fetchLibrarySummary();
+      albumCacheRef.current.clear();
+      setRootPhotos(summary.rootPreviewPhotos);
+      setRootPhotosLoaded(false);
+      setRootDefaultYear(summary.rootDefaultYear);
+      setFolders(
+        summary.folders.map((f) => ({
+          ...f,
+          photos: f.previewPhotos,
+          photosLoaded: false,
+        })),
+      );
       setViewer((v) => {
         if (!v) return null;
-        const fresh = findPhotoInLibrary(lib, v.relPath);
+        const fresh = findPhotoInFolders(summary.rootPreviewPhotos, summary.folders.map((f) => ({
+          ...f,
+          photos: f.previewPhotos,
+          photosLoaded: false,
+        })), v.relPath);
         return fresh ?? v;
       });
     } catch (e) {
@@ -204,6 +262,33 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (galleryScope === "") return;
+    void loadAlbumPhotos(galleryScope).catch((e) => {
+      if (!(e instanceof AuthRequiredError)) setErr(String(e));
+    });
+  }, [galleryScope, loadAlbumPhotos]);
+
+  useEffect(() => {
+    if (!openAlbum) return;
+    void loadAlbumPhotos(openAlbum).catch((e) => {
+      if (!(e instanceof AuthRequiredError)) setErr(String(e));
+    });
+  }, [openAlbum, loadAlbumPhotos]);
+
+  useEffect(() => {
+    if (!viewer) return;
+    if (viewer.folder == null) {
+      void loadRootPhotos().catch((e) => {
+        if (!(e instanceof AuthRequiredError)) setErr(String(e));
+      });
+      return;
+    }
+    void loadAlbumPhotos(viewer.folder).catch((e) => {
+      if (!(e instanceof AuthRequiredError)) setErr(String(e));
+    });
+  }, [viewer, loadAlbumPhotos, loadRootPhotos]);
 
   useEffect(() => {
     if (galleryScope === "") return;
@@ -270,24 +355,54 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }, [filteredRels]);
 
   const galleryAlbumHubEntries = useMemo(() => {
-    return folders
-      .filter((f) => !f.needsImport)
-      .map((f) => ({ name: f.name, photos: applyFilter(f.photos) }))
-      .filter((row) => row.photos.length > 0);
-  }, [folders, applyFilter]);
+    const imported = folders.filter((f) => !f.needsImport);
+    if (!filteredRels) {
+      return imported
+        .filter((f) => f.photoCount > 0)
+        .map((f) => ({
+          name: f.name,
+          photoCount: f.photoCount,
+          photos: f.photosLoaded ? f.photos.slice(0, 4) : f.previewPhotos,
+        }));
+    }
+    const byFolder = new Map<string, string[]>();
+    for (const rel of filteredRels) {
+      const slash = rel.indexOf("/");
+      if (slash <= 0) continue;
+      const folder = rel.slice(0, slash);
+      const arr = byFolder.get(folder) ?? [];
+      arr.push(rel);
+      byFolder.set(folder, arr);
+    }
+    return imported
+      .filter((f) => byFolder.has(f.name))
+      .map((f) => {
+        const rels = byFolder.get(f.name)!;
+        return {
+          name: f.name,
+          photoCount: rels.length,
+          photos: rels.slice(0, 4).map(previewPhotoFromRel),
+        };
+      });
+  }, [folders, filteredRels]);
 
   const galleryPhotos = useMemo(() => {
     if (galleryScope === "") return [];
     const folder = folders.find((f) => f.name === galleryScope);
-    if (!folder || folder.needsImport) return [];
+    if (!folder || folder.needsImport || !folder.photosLoaded) return [];
     return applyFilter(folder.photos);
   }, [folders, galleryScope, applyFilter]);
+
+  const galleryAlbumLoading =
+    galleryScope !== "" &&
+    !folders.find((f) => f.name === galleryScope && !f.needsImport)?.photosLoaded;
 
   const albumRows: AlbumRowModel[] = useMemo(() => {
     return folders.map((f) => ({
       id: f.name,
       title: f.name,
-      photos: applyFilter(f.photos),
+      photos: f.photosLoaded ? applyFilter(f.photos) : f.previewPhotos,
+      photoCount: f.photoCount,
       folderForRename: f.name,
       defaultYear: f.defaultYear,
       needsImport: f.needsImport,
@@ -460,14 +575,29 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
               albums={galleryAlbumHubEntries}
               imageCacheEpoch={imageCacheEpoch}
               onOpenPhoto={(folderName, idx) => {
+                const entry = galleryAlbumHubEntries.find((a) => a.name === folderName);
+                const relPath = entry?.photos[idx]?.relPath;
                 setGalleryScope(folderName);
-                setLightboxIndex(idx);
+                if (!relPath) {
+                  setLightboxIndex(0);
+                  return;
+                }
+                void loadAlbumPhotos(folderName)
+                  .then((photos) => {
+                    const i = photos.findIndex((p) => p.relPath === relPath);
+                    setLightboxIndex(i >= 0 ? i : 0);
+                  })
+                  .catch((e) => {
+                    if (!(e instanceof AuthRequiredError)) setErr(String(e));
+                  });
               }}
               onOpenAlbumGrid={(folderName) => {
                 setGalleryScope(folderName);
                 setLightboxIndex(null);
               }}
             />
+          ) : galleryAlbumLoading ? (
+            <p className="gallery-empty">Loading album…</p>
           ) : (
             <MasonryGallery
               photos={galleryPhotos}
@@ -488,7 +618,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           <section key={row.id} className="album-row">
             <div className="album-row-head">
               <h2>{row.title}</h2>
-              <span className="album-count">{row.photos.length} photos</span>
+              <span className="album-count">{row.photoCount} photos</span>
               <div className="album-row-actions">
                 {row.needsImport ? (
                   importJob?.folder === row.folderForRename ? (
