@@ -118,6 +118,19 @@ export function backAbsFromPrimaryRel(primaryRel: string): string | null {
   return null;
 }
 
+/** `_a` / `_b` companion paths from the photo library (source of truth for scan variants). */
+export function companionsFromDisk(primaryRel: string): {
+  thumbSourceRel: string;
+  backRelPath: string | null;
+} {
+  const displayAbs = displaySourceAbsFromPrimaryRel(primaryRel);
+  const backAbs = backAbsFromPrimaryRel(primaryRel);
+  return {
+    thumbSourceRel: displayAbs ? toRelFromRoot(displayAbs) : primaryRel,
+    backRelPath: backAbs ? toRelFromRoot(backAbs) : null,
+  };
+}
+
 export async function statMtimeMs(p: string) {
   try {
     const st = await fs.stat(p);

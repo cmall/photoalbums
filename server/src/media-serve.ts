@@ -9,11 +9,11 @@ import {
   displaySourceAbsFromPrimaryRel,
 } from "./metadata.js";
 
+/** Set to `0` or `false` to disable building missing WebP from the photo library. */
 export function thumbOnDemandEnabled() {
-  return (
-    process.env.ENABLE_ON_DEMAND_THUMBNAILS === "1" ||
-    process.env.ENABLE_ON_DEMAND_THUMBNAILS === "true"
-  );
+  const v = process.env.ENABLE_ON_DEMAND_THUMBNAILS;
+  if (v === "0" || v === "false") return false;
+  return true;
 }
 
 function tryExisting(abs: string): string | null {
@@ -43,16 +43,13 @@ export function resolveCachedDerivativePath(
   return tryExisting(variant === "thumb" ? thumb : web);
 }
 
-/** Serve cached file or optionally build derivative on demand (local dev only by default). */
-export async function resolveOrBuildDerivative(
+const inflightBuilds = new Map<string, Promise<string | null>>();
+
+async function buildDerivative(
   primaryRel: string,
   variant: "thumb" | "web",
-  suffix = "",
+  suffix: string,
 ): Promise<string | null> {
-  const cached = resolveCachedDerivativePath(primaryRel, variant, suffix);
-  if (cached) return cached;
-  if (!thumbOnDemandEnabled()) return null;
-
   if (suffix === "__back") {
     const backAbs = backAbsFromPrimaryRel(primaryRel);
     if (!backAbs) return null;
@@ -63,4 +60,25 @@ export async function resolveOrBuildDerivative(
     await ensureDerivatives(displayAbs, primaryRel);
   }
   return resolveCachedDerivativePath(primaryRel, variant, suffix);
+}
+
+/** Serve cached WebP or build from the photo library when the source file exists. */
+export async function resolveOrBuildDerivative(
+  primaryRel: string,
+  variant: "thumb" | "web",
+  suffix = "",
+): Promise<string | null> {
+  const cached = resolveCachedDerivativePath(primaryRel, variant, suffix);
+  if (cached) return cached;
+  if (!thumbOnDemandEnabled()) return null;
+
+  const key = `${primaryRel}\0${variant}\0${suffix}`;
+  let pending = inflightBuilds.get(key);
+  if (!pending) {
+    pending = buildDerivative(primaryRel, variant, suffix).finally(() => {
+      inflightBuilds.delete(key);
+    });
+    inflightBuilds.set(key, pending);
+  }
+  return pending;
 }

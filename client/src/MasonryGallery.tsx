@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { LibraryPhoto } from "./api";
 import { mediaUrl } from "./api";
 
@@ -6,6 +7,8 @@ function truncate(s: string, max: number) {
   if (t.length <= max) return t;
   return `${t.slice(0, max - 1)}…`;
 }
+
+const BATCH_SIZE = 48;
 
 export function MasonryGallery({
   photos,
@@ -16,13 +19,37 @@ export function MasonryGallery({
   imageCacheEpoch: number;
   onOpenIndex: (index: number) => void;
 }) {
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setVisibleCount(BATCH_SIZE);
+  }, [photos]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || visibleCount >= photos.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + BATCH_SIZE, photos.length));
+        }
+      },
+      { rootMargin: "800px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [photos.length, visibleCount]);
+
   if (photos.length === 0) {
     return <p className="gallery-empty">No photos to show yet. Import albums from Album management.</p>;
   }
 
+  const visible = photos.slice(0, visibleCount);
+
   return (
     <div className="masonry">
-      {photos.map((p, i) => {
+      {visible.map((p, i) => {
         const desc = p.metadata.description?.trim();
         const hasPeople = (p.tags ?? []).length > 0;
         return (
@@ -45,6 +72,9 @@ export function MasonryGallery({
           </article>
         );
       })}
+      {visibleCount < photos.length && (
+        <div ref={sentinelRef} className="masonry-sentinel" aria-hidden />
+      )}
     </div>
   );
 }

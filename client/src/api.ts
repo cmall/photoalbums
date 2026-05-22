@@ -124,6 +124,13 @@ export async function fetchAlbumPhotos(folder: string): Promise<LibraryPhoto[]> 
   return j.photos;
 }
 
+export async function fetchPhotoByRel(rel: string): Promise<LibraryPhoto> {
+  const r = await apiFetch(`/api/library/photo?rel=${encodeURIComponent(rel)}`);
+  if (!r.ok) throw new Error(await readApiError(r));
+  const j = (await r.json()) as { photo: LibraryPhoto };
+  return j.photo;
+}
+
 export async function fetchRootPhotosApi(): Promise<LibraryPhoto[]> {
   const r = await apiFetch("/api/library/root-photos");
   if (!r.ok) throw new Error(await readApiError(r));

@@ -5,7 +5,7 @@ import { config } from "./config.js";
 import type { ImportJobRow } from "./db.js";
 import { getDb } from "./db.js";
 import { ensureDerivatives } from "./images.js";
-import { backAbsFromPrimaryRel, cachePathsForRel, readSidecarJson, statMtimeMs, photoMetadataToDbColumns } from "./metadata.js";
+import { backAbsFromPrimaryRel, cachePathsForRel, companionsFromDisk, readSidecarJson, statMtimeMs, photoMetadataToDbColumns } from "./metadata.js";
 import { groupFolderImages, type GroupedPrimary } from "./photo-groups.js";
 import { isImageExt, normalizeRel, resolveSafeUnderRoot, toRelFromRoot } from "./paths.js";
 import { assetRowToGroupedPrimary } from "./asset-catalog.js";
@@ -269,12 +269,19 @@ export async function collectPrimariesToSync(): Promise<GroupedPrimary[]> {
 
 export async function syncOneAsset(p: GroupedPrimary) {
   const db = getDb();
+  const disk = companionsFromDisk(p.relPath);
   const absPrimary = resolveSafeUnderRoot(p.relPath);
-  const absDisplay = resolveSafeUnderRoot(p.thumbSourceRel);
+  const absDisplay = resolveSafeUnderRoot(disk.thumbSourceRel);
   if (!absPrimary || !absDisplay) return;
   const ext = path.extname(p.filename);
   const folderName = p.folder;
   const { width, height } = await ensureDerivatives(absDisplay, p.relPath);
+  const backAbs = disk.backRelPath
+    ? resolveSafeUnderRoot(disk.backRelPath)
+    : backAbsFromPrimaryRel(p.relPath);
+  if (backAbs) {
+    await ensureDerivatives(backAbs, p.relPath, "__back");
+  }
   const { thumb, web } = cachePathsForRel(p.relPath);
   const relThumb = path.relative(config.cacheDir, thumb);
   const relWeb = path.relative(config.cacheDir, web);
@@ -299,8 +306,8 @@ export async function syncOneAsset(p: GroupedPrimary) {
       ext,
       relThumb,
       relWeb,
-      p.thumbSourceRel,
-      p.backRelPath,
+      disk.thumbSourceRel,
+      disk.backRelPath,
       width,
       height,
       jsonM,
@@ -324,8 +331,8 @@ export async function syncOneAsset(p: GroupedPrimary) {
       ext,
       thumb_rel: relThumb,
       web_rel: relWeb,
-      thumb_source_rel: p.thumbSourceRel,
-      back_rel_path: p.backRelPath,
+      thumb_source_rel: disk.thumbSourceRel,
+      back_rel_path: disk.backRelPath,
       width,
       height,
       json_mtime: jsonM,

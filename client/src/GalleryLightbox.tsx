@@ -47,7 +47,7 @@ export function GalleryLightbox({
       ? ""
       : imageSource === "back" && hasBack
         ? mediaUrl(photo.relPath, "back", imageCacheEpoch)
-        : imageSource === "primary" && hasEnhanced
+        : imageSource === "primary"
           ? mediaUrl(photo.relPath, "primary", imageCacheEpoch)
           : mediaUrl(photo.relPath, "web", imageCacheEpoch);
 
@@ -142,15 +142,17 @@ export function GalleryLightbox({
                   {imageSource === "back" ? "View front" : "Back of photo"}
                 </button>
               )}
-              {hasEnhanced && (
-                <button
-                  type="button"
-                  className="lightbox-tool-btn"
-                  onClick={() => setImageSource((s) => (s === "primary" ? "enhanced" : "primary"))}
-                >
-                  {imageSource === "primary" ? "Enhanced view" : "Original scan"}
-                </button>
-              )}
+              <button
+                type="button"
+                className="lightbox-tool-btn"
+                onClick={() => setImageSource((s) => (s === "primary" ? "enhanced" : "primary"))}
+              >
+                {imageSource === "primary"
+                  ? hasEnhanced
+                    ? "Enhanced view"
+                    : "Compressed preview"
+                  : "Original scan"}
+              </button>
               <a className="lightbox-tool-btn" href={mediaUrl(photo.relPath, "original")}>
                 Download file
               </a>

@@ -15,7 +15,7 @@ import {
   writeSidecarJson,
 } from "./metadata.js";
 import { resolveOrBuildDerivative } from "./media-serve.js";
-import { getFolderPhotosFromDb, getRootPhotosFromDb } from "./asset-catalog.js";
+import { getFolderPhotosFromDb, getPhotoByRelFromDb, getRootPhotosFromDb } from "./asset-catalog.js";
 import {
   createFolder,
   deleteBackScanForPrimary,
@@ -199,6 +199,18 @@ export async function buildServer() {
       defaultYear: defaultYearForFolder(db, folder),
       photos: enrich(photos),
     };
+  });
+
+  app.get("/api/library/photo", async (req, reply) => {
+    const q = req.query as { rel?: string };
+    const rel = q.rel?.trim();
+    if (!rel) return reply.status(400).send({ error: "rel required" });
+    const photo = getPhotoByRelFromDb(rel);
+    if (!photo) return reply.status(404).send({ error: "not found" });
+    const db = getDb();
+    const { enrich } = loadLibraryEnrichmentForRels(db, [rel]);
+    const [enriched] = enrich([photo]);
+    return { photo: enriched };
   });
 
   app.get("/api/library/root-photos", async () => {

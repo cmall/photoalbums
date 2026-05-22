@@ -14,6 +14,7 @@ import {
   fetchHealth,
   fetchLibrarySummary,
   fetchAlbumPhotos,
+  fetchPhotoByRel,
   fetchRootPhotosApi,
   fetchUnimportedFolders,
   syncLibraryApi,
@@ -208,6 +209,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const bumpImageCache = useCallback(() => setImageCacheEpoch((n) => n + 1), []);
   const albumCacheRef = useRef<Map<string, LibraryPhoto[]>>(new Map());
   const [rootPhotosLoaded, setRootPhotosLoaded] = useState(false);
+  const [fetchedViewerPhoto, setFetchedViewerPhoto] = useState<LibraryPhoto | null>(null);
 
   const applyAlbumPhotosToFolder = useCallback((folderName: string, photos: LibraryPhoto[]) => {
     albumCacheRef.current.set(folderName, photos);
@@ -277,10 +279,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         if (s?.running && s.total > 0) {
           setSyncProgress({ done: s.done, total: s.total });
         } else {
-          setSyncProgress((prev) => {
-            if (prev) bumpImageCache();
-            return null;
-          });
+          setSyncProgress(null);
         }
       } catch {
         /* ignore */
@@ -292,7 +291,32 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [bumpImageCache]);
+  }, []);
+
+  useEffect(() => {
+    if (route.kind !== "photo") {
+      setFetchedViewerPhoto(null);
+      return;
+    }
+    const found = findPhotoInFolders(rootPhotos, folders, route.rel);
+    if (found) {
+      setFetchedViewerPhoto(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchPhotoByRel(route.rel)
+      .then((p) => {
+        if (!cancelled) setFetchedViewerPhoto(normalizeLibraryPhoto(p));
+      })
+      .catch((e) => {
+        if (!cancelled && !(e instanceof AuthRequiredError)) {
+          console.warn("Photo lookup failed:", e);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route, rootPhotos, folders]);
 
   useEffect(() => {
     const folderName =
@@ -451,9 +475,11 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const viewerPhoto = useMemo(() => {
     if (route.kind !== "photo") return null;
     return (
-      findPhotoInFolders(rootPhotos, folders, route.rel) ?? previewPhotoFromRel(route.rel)
+      findPhotoInFolders(rootPhotos, folders, route.rel) ??
+      fetchedViewerPhoto ??
+      previewPhotoFromRel(route.rel)
     );
-  }, [route, rootPhotos, folders]);
+  }, [route, rootPhotos, folders, fetchedViewerPhoto]);
 
   const albumRows: AlbumRowModel[] = useMemo(() => {
     return folders.map((f) => ({
@@ -919,7 +945,7 @@ function ViewerModal({
 
   const viewerImgSrc = (() => {
     if (imageSource === "back" && hasBack) return mediaUrl(photo.relPath, "back", imageCacheEpoch);
-    if (imageSource === "primary" && hasEnhanced) return mediaUrl(photo.relPath, "primary", imageCacheEpoch);
+    if (imageSource === "primary") return mediaUrl(photo.relPath, "primary", imageCacheEpoch);
     return mediaUrl(photo.relPath, "web", imageCacheEpoch);
   })();
 
@@ -1200,36 +1226,36 @@ function ViewerModal({
             )}
           </div>
           <aside className="side">
-            {(hasBack || hasEnhanced) && (
-              <div className="viewer-main-actions">
-                {hasBack && (
-                  <button
-                    type="button"
-                    className={"viewer-main-btn" + (imageSource === "back" ? " active" : "")}
-                    onClick={() => {
-                      setTagMode(false);
-                      setPending(null);
-                      setImageSource((s) => (s === "back" ? "enhanced" : "back"));
-                    }}
-                  >
-                    {imageSource === "back" ? "View front (enhanced)" : "View back of print"}
-                  </button>
-                )}
-                {hasEnhanced && (
-                  <button
-                    type="button"
-                    className={"viewer-main-btn" + (imageSource === "primary" ? " active" : "")}
-                    onClick={() => {
-                      setTagMode(false);
-                      setPending(null);
-                      setImageSource((s) => (s === "primary" ? "enhanced" : "primary"));
-                    }}
-                  >
-                    {imageSource === "primary" ? "View enhanced" : "Original scan"}
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="viewer-main-actions">
+              {hasBack && (
+                <button
+                  type="button"
+                  className={"viewer-main-btn" + (imageSource === "back" ? " active" : "")}
+                  onClick={() => {
+                    setTagMode(false);
+                    setPending(null);
+                    setImageSource((s) => (s === "back" ? "enhanced" : "back"));
+                  }}
+                >
+                  {imageSource === "back" ? "View front (enhanced)" : "View back of print"}
+                </button>
+              )}
+              <button
+                type="button"
+                className={"viewer-main-btn" + (imageSource === "primary" ? " active" : "")}
+                onClick={() => {
+                  setTagMode(false);
+                  setPending(null);
+                  setImageSource((s) => (s === "primary" ? "enhanced" : "primary"));
+                }}
+              >
+                {imageSource === "primary"
+                  ? hasEnhanced
+                    ? "View enhanced"
+                    : "Compressed preview"
+                  : "Original scan"}
+              </button>
+            </div>
             {hasBack && imageSource === "back" && (
               <button
                 type="button"

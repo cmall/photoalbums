@@ -4,6 +4,26 @@ import sharp from "sharp";
 import { config } from "./config.js";
 import { cachePathsForRel } from "./metadata.js";
 
+const MAX_CONCURRENT_DERIV = Math.max(
+  1,
+  Number(process.env.DERIVATIVE_CONCURRENCY ?? 3) || 3,
+);
+let derivActive = 0;
+const derivWaiters: Array<() => void> = [];
+
+async function withDerivLimit<T>(fn: () => Promise<T>): Promise<T> {
+  if (derivActive >= MAX_CONCURRENT_DERIV) {
+    await new Promise<void>((resolve) => derivWaiters.push(resolve));
+  }
+  derivActive++;
+  try {
+    return await fn();
+  } finally {
+    derivActive--;
+    derivWaiters.shift()?.();
+  }
+}
+
 async function cacheIsFresh(cachePath: string, sourceMtimeMs: number): Promise<boolean> {
   try {
     const c = await fs.stat(cachePath);
@@ -14,6 +34,14 @@ async function cacheIsFresh(cachePath: string, sourceMtimeMs: number): Promise<b
 }
 
 export async function ensureDerivatives(
+  absImagePath: string,
+  relPath: string,
+  cacheKeySuffix = "",
+) {
+  return withDerivLimit(() => ensureDerivativesInner(absImagePath, relPath, cacheKeySuffix));
+}
+
+async function ensureDerivativesInner(
   absImagePath: string,
   relPath: string,
   cacheKeySuffix = "",
