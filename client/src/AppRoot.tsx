@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AppErrorBoundary } from "./ErrorBoundary";
 import { App } from "./App";
 import { AuthRequiredError, fetchAuthStatus } from "./api";
 import { LoginScreen } from "./LoginScreen";
@@ -40,9 +41,11 @@ export function AppRoot() {
   }
 
   return (
-    <App
-      onAuthLost={() => setAuth((a) => ({ ...a, authenticated: false }))}
-    />
+    <AppErrorBoundary>
+      <App
+        onAuthLost={() => setAuth((a) => ({ ...a, authenticated: false }))}
+      />
+    </AppErrorBoundary>
   );
 }
 

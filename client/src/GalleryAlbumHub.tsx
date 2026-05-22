@@ -25,7 +25,7 @@ export function GalleryAlbumHub({
   return (
     <div className="gallery-album-hub">
       {albums.map((album) => {
-        const thumbs = album.photos.slice(0, 4);
+        const thumbs = (album.photos ?? []).slice(0, 4);
         const padCount = Math.max(0, 4 - thumbs.length);
         return (
           <section key={album.name} className="gallery-album-block" aria-label={`Album ${album.name}`}>

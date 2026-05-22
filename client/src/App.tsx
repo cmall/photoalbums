@@ -36,6 +36,7 @@ import {
   type TagInfo,
 } from "./api";
 import { folderFromRel } from "./app-url";
+import { normalizeFolderFromSummary, normalizeLibraryPhoto } from "./normalize";
 import { useAppRoute } from "./useAppRoute";
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -71,7 +72,7 @@ function PhotoTile({
   imageCacheEpoch?: number;
 }) {
   const [hoveredTagId, setHoveredTagId] = useState<string | null>(null);
-  const sortedTags = photo.tags;
+  const sortedTags = photo.tags ?? [];
   const showNamesUnderThumb = sortedTags.length > 0 && sortedTags.length <= 2;
   const showPeopleCount = sortedTags.length > 2;
 
@@ -128,7 +129,7 @@ function findPhotoInFolders(
     for (const p of folder.photos) {
       if (p.relPath === relPath) return p;
     }
-    for (const p of folder.previewPhotos) {
+    for (const p of folder.previewPhotos ?? []) {
       if (p.relPath === relPath) return p;
     }
   }
@@ -224,7 +225,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         applyAlbumPhotosToFolder(folderName, cached);
         return cached;
       }
-      const photos = await fetchAlbumPhotos(folderName);
+      const photos = (await fetchAlbumPhotos(folderName)).map(normalizeLibraryPhoto);
       applyAlbumPhotosToFolder(folderName, photos);
       return photos;
     },
@@ -233,7 +234,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
 
   const loadRootPhotos = useCallback(async (): Promise<LibraryPhoto[]> => {
     if (rootPhotosLoaded) return rootPhotos;
-    const photos = await fetchRootPhotosApi();
+    const photos = (await fetchRootPhotosApi()).map(normalizeLibraryPhoto);
     setRootPhotos(photos);
     setRootPhotosLoaded(true);
     return photos;
@@ -246,16 +247,10 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
       if (sync) void syncLibraryApi();
       const summary = await fetchLibrarySummary();
       albumCacheRef.current.clear();
-      setRootPhotos(summary.rootPreviewPhotos);
+      setRootPhotos(summary.rootPreviewPhotos.map(normalizeLibraryPhoto));
       setRootPhotosLoaded(false);
       setRootDefaultYear(summary.rootDefaultYear);
-      setFolders(
-        summary.folders.map((f) => ({
-          ...f,
-          photos: f.previewPhotos,
-          photosLoaded: false,
-        })),
-      );
+      setFolders(summary.folders.map(normalizeFolderFromSummary));
     } catch (e) {
       if (e instanceof AuthRequiredError) {
         onAuthLost?.();
@@ -412,7 +407,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         .map((f) => ({
           name: f.name,
           photoCount: f.photoCount,
-          photos: f.photosLoaded ? f.photos.slice(0, 4) : f.previewPhotos,
+          photos: (f.photosLoaded ? f.photos : f.previewPhotos ?? []).slice(0, 4),
         }));
     }
     const byFolder = new Map<string, string[]>();
@@ -440,7 +435,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     if (galleryScope === "") return [];
     const folder = findFolder(folders, galleryScope);
     if (!folder || folder.needsImport) return [];
-    const pool = folder.photosLoaded ? folder.photos : folder.previewPhotos;
+    const pool = folder.photosLoaded ? folder.photos : folder.previewPhotos ?? [];
     return applyFilter(pool);
   }, [folders, galleryScope, applyFilter]);
 
@@ -464,7 +459,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     return folders.map((f) => ({
       id: f.name,
       title: f.name,
-      photos: f.photosLoaded ? applyFilter(f.photos) : f.previewPhotos,
+      photos: f.photosLoaded ? applyFilter(f.photos) : f.previewPhotos ?? [],
       photoCount: f.photoCount,
       folderForRename: f.name,
       defaultYear: f.defaultYear,
@@ -484,7 +479,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     const folder = folderFromRel(route.rel);
     if (folder == null) return applyFilter(rootPhotos);
     const row = folders.find((f) => f.name === folder);
-    return row ? applyFilter(row.photosLoaded ? row.photos : row.previewPhotos) : [];
+    return row ? applyFilter(row.photosLoaded ? row.photos : row.previewPhotos ?? []) : [];
   }, [route, rootPhotos, folders, applyFilter]);
 
   async function applyPersonFilter(person: Person) {
@@ -929,7 +924,7 @@ function ViewerModal({
   })();
 
   const displayTags = useMemo(() => {
-    const merged = photo.tags.map((t) => ({
+    const merged = (photo.tags ?? []).map((t) => ({
       ...t,
       normX: dragOverride[t.tagId]?.normX ?? t.normX,
       normY: dragOverride[t.tagId]?.normY ?? t.normY,

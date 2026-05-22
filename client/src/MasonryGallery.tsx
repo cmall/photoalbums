@@ -24,7 +24,7 @@ export function MasonryGallery({
     <div className="masonry">
       {photos.map((p, i) => {
         const desc = p.metadata.description?.trim();
-        const hasPeople = p.tags.length > 0;
+        const hasPeople = (p.tags ?? []).length > 0;
         return (
           <article key={p.relPath} className="masonry-item">
             <button type="button" className="masonry-card" onClick={() => onOpenIndex(i)}>
@@ -36,7 +36,7 @@ export function MasonryGallery({
                   {desc && <p className="masonry-caption">{truncate(desc, 120)}</p>}
                   {hasPeople && (
                     <p className="masonry-people">
-                      {p.tags.map((t) => t.fullName).join(" · ")}
+                      {(p.tags ?? []).map((t) => t.fullName).join(" · ")}
                     </p>
                   )}
                 </div>

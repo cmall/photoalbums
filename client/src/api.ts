@@ -1,3 +1,5 @@
+import { normalizeFolderFromSummary, normalizeLibraryPhoto } from "./normalize";
+
 export type PhotoMetadata = {
   date?: string;
   location?: string;
@@ -101,11 +103,7 @@ export async function fetchUnimportedFolders(): Promise<LibraryFolder[]> {
   const r = await apiFetch("/api/library/unimported");
   if (!r.ok) throw new Error(await readApiError(r));
   const j = (await r.json()) as { folders: Omit<LibraryFolder, "photos" | "photosLoaded">[] };
-  return j.folders.map((f) => ({
-    ...f,
-    photos: f.previewPhotos,
-    photosLoaded: false,
-  }));
+  return j.folders.map((f) => normalizeFolderFromSummary(f));
 }
 
 export async function syncLibraryApi() {
@@ -139,12 +137,8 @@ export async function fetchLibrary(sync?: boolean): Promise<LibraryResponse> {
   const summary = await fetchLibrarySummary();
   return {
     rootDefaultYear: summary.rootDefaultYear,
-    rootPhotos: summary.rootPreviewPhotos,
-    folders: summary.folders.map((f) => ({
-      ...f,
-      photos: f.previewPhotos,
-      photosLoaded: false,
-    })),
+    rootPhotos: summary.rootPreviewPhotos.map(normalizeLibraryPhoto),
+    folders: summary.folders.map(normalizeFolderFromSummary),
   };
 }
 

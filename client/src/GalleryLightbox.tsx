@@ -85,7 +85,7 @@ export function GalleryLightbox({
   if (!photo) return null;
 
   const caption = captionFromPhoto(photo);
-  const sortedTags = [...photo.tags].sort((a, b) => a.normX - b.normX);
+  const sortedTags = [...(photo.tags ?? [])].sort((a, b) => a.normX - b.normX);
   const showFaceLayer = imageSource === "enhanced" && sortedTags.length > 0;
 
   return (
