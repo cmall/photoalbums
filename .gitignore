@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+.env.production
+.env.development
+.env.*.local
+server/.photo-cache
+server/data
+client/dist
+.DS_Store
