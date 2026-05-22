@@ -104,7 +104,7 @@ export async function registerAuth(app: FastifyInstance) {
   app.addHook("onRequest", async (req, reply) => {
     if (!isAuthEnabled()) return;
     const path = req.url.split("?")[0] ?? req.url;
-    if (path === "/api/auth/login" || path === "/api/auth/status") return;
+    if (path === "/api/auth/login" || path === "/api/auth/status" || path === "/api/health") return;
     if (!path.startsWith("/api/")) return;
     if (isRequestAuthenticated(req)) return;
     return reply.status(401).send({ error: "Authentication required" });
