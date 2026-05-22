@@ -736,6 +736,15 @@ button.sugg {
   font-size: 0.85rem;
 }
 
+.sync-banner {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: #eef4fb;
+  border-radius: 6px;
+  color: #2a4a6b;
+  font-size: 0.85rem;
+}
+
 .board {
   display: flex;
   flex-direction: column;

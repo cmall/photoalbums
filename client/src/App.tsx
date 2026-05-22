@@ -191,6 +191,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   /** Gallery: "" = album overview grid; otherwise an imported folder name. */
   const [galleryScope, setGalleryScope] = useState<string>("");
   const [openInPhotoshopEnabled, setOpenInPhotoshopEnabled] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
   const [imageCacheEpoch, setImageCacheEpoch] = useState(0);
   const bumpImageCache = useCallback(() => setImageCacheEpoch((n) => n + 1), []);
   const albumCacheRef = useRef<Map<string, LibraryPhoto[]>>(new Map());
@@ -257,12 +258,32 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }, [load]);
 
   useEffect(() => {
-    void fetchHealth()
-      .then((h) => {
+    let cancelled = false;
+    async function pollSync() {
+      try {
+        const h = await fetchHealth();
+        if (cancelled) return;
         if (h.openInPhotoshop) setOpenInPhotoshopEnabled(true);
-      })
-      .catch(() => {});
-  }, []);
+        const s = h.sync;
+        if (s?.running && s.total > 0) {
+          setSyncProgress({ done: s.done, total: s.total });
+        } else {
+          setSyncProgress((prev) => {
+            if (prev) bumpImageCache();
+            return null;
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    void pollSync();
+    const t = window.setInterval(() => void pollSync(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [bumpImageCache]);
 
   useEffect(() => {
     if (galleryScope === "") return;
@@ -407,13 +428,15 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const galleryPhotos = useMemo(() => {
     if (galleryScope === "") return [];
     const folder = folders.find((f) => f.name === galleryScope);
-    if (!folder || folder.needsImport || !folder.photosLoaded) return [];
-    return applyFilter(folder.photos);
+    if (!folder || folder.needsImport) return [];
+    const pool = folder.photosLoaded ? folder.photos : folder.previewPhotos;
+    return applyFilter(pool);
   }, [folders, galleryScope, applyFilter]);
 
   const galleryAlbumLoading =
     galleryScope !== "" &&
-    !folders.find((f) => f.name === galleryScope && !f.needsImport)?.photosLoaded;
+    galleryPhotos.length === 0 &&
+    !folders.find((f) => f.name === galleryScope)?.photosLoaded;
 
   const albumRows: AlbumRowModel[] = useMemo(() => {
     return folders.map((f) => ({
@@ -582,6 +605,11 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           </div>
         )}
         {err && <div className="error">{err}</div>}
+        {syncProgress && (
+          <div className="sync-banner" aria-live="polite">
+            Generating thumbnails… {syncProgress.done} / {syncProgress.total}
+          </div>
+        )}
       </header>
 
       <main className={appView === "gallery" ? "main-gallery" : "board"}>

@@ -12,6 +12,11 @@ function migrateAssetsMetadataColumns(database: Database.Database) {
   if (!has.has("location")) database.exec("ALTER TABLE assets ADD COLUMN location TEXT");
   if (!has.has("description")) database.exec("ALTER TABLE assets ADD COLUMN description TEXT");
   if (!has.has("caption")) database.exec("ALTER TABLE assets ADD COLUMN caption TEXT");
+  if (!has.has("thumb_source_rel")) database.exec("ALTER TABLE assets ADD COLUMN thumb_source_rel TEXT");
+  if (!has.has("back_rel_path")) database.exec("ALTER TABLE assets ADD COLUMN back_rel_path TEXT");
+  database.exec(
+    "UPDATE assets SET thumb_source_rel = rel_path WHERE thumb_source_rel IS NULL OR thumb_source_rel = ''",
+  );
 }
 
 export function getDb() {

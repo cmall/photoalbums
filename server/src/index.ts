@@ -10,23 +10,18 @@ import mime from "mime";
 import { assertConfig, config } from "./config.js";
 import { getDb } from "./db.js";
 import {
-  backAbsFromPrimaryRel,
-  cachePathsForRel,
-  displaySourceAbsFromPrimaryRel,
   imageAbsFromRel,
-  photoMetadataFromDbRow,
   readSidecarJson,
   writeSidecarJson,
 } from "./metadata.js";
-import { ensureDerivatives } from "./images.js";
+import { resolveOrBuildDerivative } from "./media-serve.js";
+import { getFolderPhotosFromDb, getRootPhotosFromDb } from "./asset-catalog.js";
 import {
   createFolder,
   deleteBackScanForPrimary,
-  getFolderPhotos,
   getImportJob,
   getLibrary,
   getLibrarySummary,
-  getRootPhotosFromDisk,
   getUnimportedFoldersOnDisk,
   movePhoto,
   refreshDerivativesForPhoto,
@@ -193,7 +188,7 @@ export async function buildServer() {
     const folder = q.folder?.trim();
     if (!folder) return reply.status(400).send({ error: "folder required" });
     const db = getDb();
-    const photos = await getFolderPhotos(folder);
+    const photos = getFolderPhotosFromDb(folder);
     const { enrich } = loadLibraryEnrichmentForRels(
       db,
       photos.map((p) => p.relPath),
@@ -207,7 +202,7 @@ export async function buildServer() {
 
   app.get("/api/library/root-photos", async () => {
     const db = getDb();
-    const photos = await getRootPhotosFromDisk();
+    const photos = getRootPhotosFromDb();
     const { enrich } = loadLibraryEnrichmentForRels(
       db,
       photos.map((p) => p.relPath),
@@ -225,7 +220,7 @@ export async function buildServer() {
       req.log.warn("GET /api/library?folder= is deprecated; use /api/library/album");
       const folder = q.folder.trim();
       const db = getDb();
-      const photos = await getFolderPhotos(folder);
+      const photos = getFolderPhotosFromDb(folder);
       const { enrich } = loadLibraryEnrichmentForRels(
         db,
         photos.map((p) => p.relPath),
@@ -515,35 +510,26 @@ export async function buildServer() {
     }
 
     if (variant === "back") {
-      const backAbs = backAbsFromPrimaryRel(primaryRel);
-      if (!backAbs) return reply.status(404).send({ error: "no back scan" });
-      await ensureDerivatives(backAbs, primaryRel, "__back");
-      const { web } = cachePathsForRel(primaryRel, "__back");
-      try {
-        await fs.access(web);
-      } catch {
-        return reply.status(404).send({ error: "derivative missing" });
-      }
-      const stream = fsSync.createReadStream(web);
+      const target = await resolveOrBuildDerivative(primaryRel, "web", "__back");
+      if (!target) return reply.status(404).send({ error: "no back scan or thumbnail not ready" });
+      const stream = fsSync.createReadStream(target);
       return reply
-        .header("Cache-Control", "private, max-age=0, must-revalidate")
+        .header("Cache-Control", "private, max-age=86400")
         .type("image/webp")
         .send(stream);
     }
 
-    const displayAbs = displaySourceAbsFromPrimaryRel(primaryRel);
-    if (!displayAbs) return reply.status(404).send({ error: "not found" });
-    await ensureDerivatives(displayAbs, primaryRel);
-    const { thumb, web } = cachePathsForRel(primaryRel);
-    const target = variant === "thumb" ? thumb : web;
-    try {
-      await fs.access(target);
-    } catch {
-      return reply.status(404).send({ error: "derivative missing" });
+    if (variant !== "thumb" && variant !== "web") {
+      return reply.status(400).send({ error: "unknown variant" });
+    }
+
+    const target = await resolveOrBuildDerivative(primaryRel, variant);
+    if (!target) {
+      return reply.status(404).send({ error: "thumbnail not ready — library sync may still be running" });
     }
     const stream = fsSync.createReadStream(target);
     return reply
-      .header("Cache-Control", "private, max-age=0, must-revalidate")
+      .header("Cache-Control", "private, max-age=86400")
       .type("image/webp")
       .send(stream);
   });
@@ -577,7 +563,7 @@ export async function start() {
   await server.listen({ port: config.port, host: config.host });
   /** Defer thumbnail sync so API requests are not competing with disk I/O on startup. */
   const syncDelayMs = Number(
-    process.env.SYNC_START_DELAY_MS ?? (process.env.NODE_ENV === "production" ? 120_000 : 5_000),
+    process.env.SYNC_START_DELAY_MS ?? (process.env.NODE_ENV === "production" ? 15_000 : 3_000),
   );
   setTimeout(() => {
     void syncAssetsFromDisk().catch((err) => {

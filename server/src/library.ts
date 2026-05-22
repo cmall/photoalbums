@@ -8,6 +8,7 @@ import { ensureDerivatives } from "./images.js";
 import { backAbsFromPrimaryRel, cachePathsForRel, readSidecarJson, statMtimeMs, photoMetadataToDbColumns } from "./metadata.js";
 import { groupFolderImages, type GroupedPrimary } from "./photo-groups.js";
 import { isImageExt, normalizeRel, resolveSafeUnderRoot, toRelFromRoot } from "./paths.js";
+import { assetRowToGroupedPrimary } from "./asset-catalog.js";
 
 function sidecarAbs(imageAbs: string) {
   const dir = path.dirname(imageAbs);
@@ -46,14 +47,16 @@ function dbRowToPreviewPhoto(row: {
   rel_path: string;
   filename: string;
   folder_name: string | null;
+  thumb_source_rel?: string | null;
+  back_rel_path?: string | null;
 }): GroupedPrimary {
-  return {
-    relPath: row.rel_path,
+  return assetRowToGroupedPrimary({
+    rel_path: row.rel_path,
     filename: row.filename,
-    folder: row.folder_name,
-    thumbSourceRel: row.rel_path,
-    backRelPath: null,
-  };
+    folder_name: row.folder_name,
+    thumb_source_rel: row.thumb_source_rel ?? row.rel_path,
+    back_rel_path: row.back_rel_path ?? null,
+  });
 }
 
 export type LibraryFolderSummary = {
@@ -78,10 +81,16 @@ export function getLibrarySummary(): {
   };
   const rootPreviews = db
     .prepare(
-      `SELECT rel_path, filename, folder_name FROM assets
+      `SELECT rel_path, filename, folder_name, thumb_source_rel, back_rel_path FROM assets
        WHERE folder_name IS NULL ORDER BY filename LIMIT 4`,
     )
-    .all() as { rel_path: string; filename: string; folder_name: string | null }[];
+    .all() as {
+    rel_path: string;
+    filename: string;
+    folder_name: string | null;
+    thumb_source_rel: string | null;
+    back_rel_path: string | null;
+  }[];
 
   const folderCounts = db
     .prepare(
@@ -93,13 +102,19 @@ export function getLibrarySummary(): {
   const previewRows = db
     .prepare(
       `WITH ranked AS (
-         SELECT rel_path, filename, folder_name,
+         SELECT rel_path, filename, folder_name, thumb_source_rel, back_rel_path,
                 ROW_NUMBER() OVER (PARTITION BY folder_name ORDER BY filename) AS rn
          FROM assets WHERE folder_name IS NOT NULL
        )
-       SELECT rel_path, filename, folder_name FROM ranked WHERE rn <= 4`,
+       SELECT rel_path, filename, folder_name, thumb_source_rel, back_rel_path FROM ranked WHERE rn <= 4`,
     )
-    .all() as { rel_path: string; filename: string; folder_name: string | null }[];
+    .all() as {
+    rel_path: string;
+    filename: string;
+    folder_name: string | null;
+    thumb_source_rel: string | null;
+    back_rel_path: string | null;
+  }[];
 
   const previewsByFolder = new Map<string, GroupedPrimary[]>();
   for (const row of previewRows) {
@@ -274,6 +289,7 @@ export async function syncOneAsset(p: GroupedPrimary) {
   if (existing) {
     db.prepare(
       `UPDATE assets SET folder_name = ?, filename = ?, ext = ?, thumb_rel = ?, web_rel = ?,
+       thumb_source_rel = ?, back_rel_path = ?,
        width = ?, height = ?, json_mtime = ?, event_date = ?, location = ?, description = ?, caption = NULL,
        scanned_at = datetime('now')
        WHERE id = ?`,
@@ -283,6 +299,8 @@ export async function syncOneAsset(p: GroupedPrimary) {
       ext,
       relThumb,
       relWeb,
+      p.thumbSourceRel,
+      p.backRelPath,
       width,
       height,
       jsonM,
@@ -294,8 +312,10 @@ export async function syncOneAsset(p: GroupedPrimary) {
   } else {
     const id = uuidv4();
     db.prepare(
-      `INSERT INTO assets (id, rel_path, folder_name, filename, ext, thumb_rel, web_rel, width, height, json_mtime, event_date, location, description, caption)
-       VALUES (@id, @rel_path, @folder_name, @filename, @ext, @thumb_rel, @web_rel, @width, @height, @json_mtime, @event_date, @location, @description, NULL)`,
+      `INSERT INTO assets (id, rel_path, folder_name, filename, ext, thumb_rel, web_rel,
+       thumb_source_rel, back_rel_path, width, height, json_mtime, event_date, location, description, caption)
+       VALUES (@id, @rel_path, @folder_name, @filename, @ext, @thumb_rel, @web_rel,
+       @thumb_source_rel, @back_rel_path, @width, @height, @json_mtime, @event_date, @location, @description, NULL)`,
     ).run({
       id,
       rel_path: p.relPath,
@@ -304,6 +324,8 @@ export async function syncOneAsset(p: GroupedPrimary) {
       ext,
       thumb_rel: relThumb,
       web_rel: relWeb,
+      thumb_source_rel: p.thumbSourceRel,
+      back_rel_path: p.backRelPath,
       width,
       height,
       json_mtime: jsonM,
