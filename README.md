@@ -57,8 +57,8 @@ Then open **http://127.0.0.1:8787** (or your configured `HOST` / `PORT`).
 |------|------------------|
 | Original photos | Your `PHOTO_LIBRARY_ROOT` |
 | Per-photo metadata JSON | Next to each image: `basename.json` |
-| SQLite database | `server/data/albums.sqlite` (configurable) |
-| Thumbnails / web previews | `server/.photo-cache` (configurable) |
+| SQLite database | `ALBUMS_DB_PATH` (e.g. `/Users/cm/AlbumData/scanned.sqlite`) |
+| Thumbnails / web previews | `PHOTO_CACHE_DIR` (e.g. `/Users/cm/AlbumData/Scanned/Cache`) |
 
 ## Troubleshooting
 

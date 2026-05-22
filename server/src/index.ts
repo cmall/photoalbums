@@ -545,6 +545,16 @@ export async function start() {
   getDb();
   await fs.mkdir(config.cacheDir, { recursive: true });
   const server = await buildServer();
+  server.log.info(
+    {
+      photoRoot: config.photoRoot,
+      dbPath: config.dbPath,
+      cacheDir: config.cacheDir,
+      port: config.port,
+      host: config.host,
+    },
+    "Albums server config",
+  );
   await server.listen({ port: config.port, host: config.host });
   /** Full scan + thumbnails can take a long time; bind the port first so dev clients can connect immediately. */
   void syncAssetsFromDisk().catch((err) => {

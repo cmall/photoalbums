@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
-
-/** Repo root (parent of `server/` when cwd is the server workspace). */
-function repoRoot() {
-  return path.resolve(process.cwd(), "..");
-}
+import { repoRootDir, serverRootDir } from "./install-paths.js";
 
 function loadIfExists(filePath: string, override = false) {
   if (!fs.existsSync(filePath)) return;
@@ -22,8 +18,8 @@ function loadIfExists(filePath: string, override = false) {
  */
 export function loadAppEnv() {
   const mode = process.env.NODE_ENV === "production" ? "production" : "development";
-  const root = repoRoot();
-  const serverDir = process.cwd();
+  const root = repoRootDir();
+  const serverDir = serverRootDir();
 
   loadIfExists(path.join(root, ".env"));
   loadIfExists(path.join(root, ".env.local"), true);

@@ -1,15 +1,17 @@
 import path from "node:path";
 import { loadAppEnv } from "./load-env.js";
+import { serverRootDir } from "./install-paths.js";
 
 loadAppEnv();
 
 const root = process.env.PHOTO_LIBRARY_ROOT ?? "";
-const cache = process.env.PHOTO_CACHE_DIR ?? path.join(process.cwd(), ".photo-cache");
+const cache =
+  process.env.PHOTO_CACHE_DIR ?? path.join(serverRootDir(), ".photo-cache");
 
 export const config = {
   photoRoot: path.resolve(root),
   cacheDir: path.resolve(cache),
-  dbPath: process.env.ALBUMS_DB_PATH ?? path.join(process.cwd(), "data", "albums.sqlite"),
+  dbPath: process.env.ALBUMS_DB_PATH ?? path.join(serverRootDir(), "data", "albums.sqlite"),
   port: Number(process.env.PORT ?? 8787),
   host: process.env.HOST ?? "0.0.0.0",
   /** Launch Photoshop on the server machine via /api/open-photoshop (local workflow). */
