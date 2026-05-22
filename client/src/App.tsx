@@ -35,6 +35,8 @@ import {
   type PhotoMetadata,
   type TagInfo,
 } from "./api";
+import { folderFromRel } from "./app-url";
+import { useAppRoute } from "./useAppRoute";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -163,18 +165,21 @@ type AlbumRowModel = {
 type AppView = "gallery" | "manage";
 
 export function App({ onAuthLost }: { onAuthLost?: () => void }) {
-  const [appView, setAppView] = useState<AppView>("gallery");
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const { route, navigate } = useAppRoute();
+  const appView: AppView = route.kind === "manage-hub" || route.kind === "manage-album" ? "manage" : "gallery";
+  const galleryScope = route.kind === "gallery-album" ? route.folder : "";
+  const openAlbum = route.kind === "manage-album" ? route.folder : null;
+  const lightboxIndex =
+    route.kind === "gallery-album" && route.lightboxIndex != null ? route.lightboxIndex : null;
+
   const [rootPhotos, setRootPhotos] = useState<LibraryPhoto[]>([]);
   const [rootDefaultYear, setRootDefaultYear] = useState<number | null>(null);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(true);
-  const [viewer, setViewer] = useState<LibraryPhoto | null>(null);
+  const [renameState, setRenameState] = useState<{ folder: string; next: string } | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [moveTarget, setMoveTarget] = useState<string>("");
-  const [renameState, setRenameState] = useState<{ folder: string; next: string } | null>(null);
-  const [openAlbum, setOpenAlbum] = useState<OpenAlbum | null>(null);
   const [importJob, setImportJob] = useState<{ id: string; folder: string } | null>(null);
   const [importJobView, setImportJobView] = useState<{
     done: number;
@@ -188,8 +193,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const [personSuggestions, setPersonSuggestions] = useState<Person[]>([]);
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const [filteredRels, setFilteredRels] = useState<Set<string> | null>(null);
-  /** Gallery: "" = album overview grid; otherwise an imported folder name. */
-  const [galleryScope, setGalleryScope] = useState<string>("");
   const [openInPhotoshopEnabled, setOpenInPhotoshopEnabled] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
   const [imageCacheEpoch, setImageCacheEpoch] = useState(0);
@@ -233,15 +236,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           photosLoaded: false,
         })),
       );
-      setViewer((v) => {
-        if (!v) return null;
-        const fresh = findPhotoInFolders(summary.rootPreviewPhotos, summary.folders.map((f) => ({
-          ...f,
-          photos: f.previewPhotos,
-          photosLoaded: false,
-        })), v.relPath);
-        return fresh ?? v;
-      });
     } catch (e) {
       if (e instanceof AuthRequiredError) {
         onAuthLost?.();
@@ -286,37 +280,26 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }, [bumpImageCache]);
 
   useEffect(() => {
-    if (galleryScope === "") return;
-    void loadAlbumPhotos(galleryScope).catch((e) => {
+    const folder =
+      route.kind === "gallery-album"
+        ? route.folder
+        : route.kind === "manage-album"
+          ? route.folder
+          : route.kind === "photo"
+            ? folderFromRel(route.rel)
+            : null;
+    if (!folder) return;
+    void loadAlbumPhotos(folder).catch((e) => {
       if (!(e instanceof AuthRequiredError)) setErr(String(e));
     });
-  }, [galleryScope, loadAlbumPhotos]);
+  }, [route, loadAlbumPhotos]);
 
   useEffect(() => {
-    if (!openAlbum) return;
-    void loadAlbumPhotos(openAlbum).catch((e) => {
+    if (route.kind !== "photo" || folderFromRel(route.rel)) return;
+    void loadRootPhotos().catch((e) => {
       if (!(e instanceof AuthRequiredError)) setErr(String(e));
     });
-  }, [openAlbum, loadAlbumPhotos]);
-
-  useEffect(() => {
-    if (!viewer) return;
-    if (viewer.folder == null) {
-      void loadRootPhotos().catch((e) => {
-        if (!(e instanceof AuthRequiredError)) setErr(String(e));
-      });
-      return;
-    }
-    void loadAlbumPhotos(viewer.folder).catch((e) => {
-      if (!(e instanceof AuthRequiredError)) setErr(String(e));
-    });
-  }, [viewer, loadAlbumPhotos, loadRootPhotos]);
-
-  useEffect(() => {
-    if (galleryScope === "") return;
-    const f = folders.find((x) => x.name === galleryScope);
-    if (!f || f.needsImport) setGalleryScope("");
-  }, [folders, galleryScope]);
+  }, [route, loadRootPhotos]);
 
   useEffect(() => {
     if (appView !== "manage") return;
@@ -331,7 +314,8 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         });
       })
       .catch((e) => {
-        if (!(e instanceof AuthRequiredError)) setErr(String(e));
+        if (e instanceof AuthRequiredError) return;
+        console.warn("Unimported folder scan failed:", e);
       });
   }, [appView]);
 
@@ -434,9 +418,16 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }, [folders, galleryScope, applyFilter]);
 
   const galleryAlbumLoading =
-    galleryScope !== "" &&
+    route.kind === "gallery-album" &&
     galleryPhotos.length === 0 &&
-    !folders.find((f) => f.name === galleryScope)?.photosLoaded;
+    !folders.find((f) => f.name === route.folder)?.photosLoaded;
+
+  const viewerPhoto = useMemo(() => {
+    if (route.kind !== "photo") return null;
+    return (
+      findPhotoInFolders(rootPhotos, folders, route.rel) ?? previewPhotoFromRel(route.rel)
+    );
+  }, [route, rootPhotos, folders]);
 
   const albumRows: AlbumRowModel[] = useMemo(() => {
     return folders.map((f) => ({
@@ -458,11 +449,12 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
 
   /** Photos in the same album as the open viewer (for prev/next within album only). */
   const viewerAlbumPhotos = useMemo(() => {
-    if (!viewer) return [];
-    if (viewer.folder == null) return applyFilter(rootPhotos);
-    const folder = folders.find((f) => f.name === viewer.folder);
-    return folder ? applyFilter(folder.photos) : [];
-  }, [viewer, rootPhotos, folders, applyFilter]);
+    if (route.kind !== "photo") return [];
+    const folder = folderFromRel(route.rel);
+    if (folder == null) return applyFilter(rootPhotos);
+    const row = folders.find((f) => f.name === folder);
+    return row ? applyFilter(row.photosLoaded ? row.photos : row.previewPhotos) : [];
+  }, [route, rootPhotos, folders, applyFilter]);
 
   async function applyPersonFilter(person: Person) {
     setActivePersonId(person.id);
@@ -483,33 +475,48 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }
 
   const folderDefaultYearForViewer =
-    viewer?.folder != null ? folders.find((f) => f.name === viewer.folder)?.defaultYear ?? null : rootDefaultYear;
+    route.kind === "photo"
+      ? (() => {
+          const folder = folderFromRel(route.rel);
+          return folder != null
+            ? (folders.find((f) => f.name === folder)?.defaultYear ?? null)
+            : rootDefaultYear;
+        })()
+      : null;
 
   useEffect(() => {
-    if (lightboxIndex != null && galleryPhotos.length === 0) {
-      setLightboxIndex(null);
-    } else if (lightboxIndex != null && lightboxIndex >= galleryPhotos.length) {
-      setLightboxIndex(Math.max(0, galleryPhotos.length - 1));
+    if (route.kind !== "gallery-album" || route.lightboxIndex == null) return;
+    if (galleryPhotos.length === 0) {
+      navigate({ kind: "gallery-album", folder: route.folder }, true);
+    } else if (route.lightboxIndex >= galleryPhotos.length) {
+      navigate(
+        { kind: "gallery-album", folder: route.folder, lightboxIndex: galleryPhotos.length - 1 },
+        true,
+      );
     }
-  }, [galleryPhotos.length, lightboxIndex]);
+  }, [galleryPhotos.length, route, navigate]);
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-bar">
-          <h1>Albums</h1>
+          <h1>
+            <button type="button" className="app-title-link" onClick={() => navigate({ kind: "gallery-hub" })}>
+              Albums
+            </button>
+          </h1>
           <nav className="app-nav" aria-label="Primary views">
             <button
               type="button"
               className={appView === "gallery" ? "nav-tab active" : "nav-tab"}
-              onClick={() => setAppView("gallery")}
+              onClick={() => navigate({ kind: "gallery-hub" })}
             >
               Gallery
             </button>
             <button
               type="button"
               className={appView === "manage" ? "nav-tab active" : "nav-tab"}
-              onClick={() => setAppView("manage")}
+              onClick={() => navigate({ kind: "manage-hub" })}
             >
               Album management
             </button>
@@ -522,8 +529,9 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
                 className="gallery-scope-select"
                 value={galleryScope}
                 onChange={(e) => {
-                  setLightboxIndex(null);
-                  setGalleryScope(e.target.value);
+                  const v = e.target.value;
+                  if (!v) navigate({ kind: "gallery-hub" });
+                  else navigate({ kind: "gallery-album", folder: v });
                 }}
                 aria-label="Choose album to view"
               >
@@ -623,39 +631,47 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
               onOpenPhoto={(folderName, idx) => {
                 const entry = galleryAlbumHubEntries.find((a) => a.name === folderName);
                 const relPath = entry?.photos[idx]?.relPath;
-                setGalleryScope(folderName);
                 if (!relPath) {
-                  setLightboxIndex(0);
+                  navigate({ kind: "gallery-album", folder: folderName });
                   return;
                 }
                 void loadAlbumPhotos(folderName)
                   .then((photos) => {
                     const i = photos.findIndex((p) => p.relPath === relPath);
-                    setLightboxIndex(i >= 0 ? i : 0);
+                    navigate({
+                      kind: "gallery-album",
+                      folder: folderName,
+                      lightboxIndex: i >= 0 ? i : 0,
+                    });
                   })
                   .catch((e) => {
                     if (!(e instanceof AuthRequiredError)) setErr(String(e));
                   });
               }}
               onOpenAlbumGrid={(folderName) => {
-                setGalleryScope(folderName);
-                setLightboxIndex(null);
+                navigate({ kind: "gallery-album", folder: folderName });
               }}
             />
           ) : galleryAlbumLoading ? (
             <p className="gallery-empty">Loading album…</p>
+          ) : !folders.find((f) => f.name === galleryScope) ? (
+            <p className="gallery-empty">Album not found.</p>
           ) : (
             <MasonryGallery
               photos={galleryPhotos}
               imageCacheEpoch={imageCacheEpoch}
-              onOpenIndex={(i) => setLightboxIndex(i)}
+              onOpenIndex={(i) =>
+                navigate({ kind: "gallery-album", folder: galleryScope, lightboxIndex: i })
+              }
             />
           )
+        ) : libraryLoading ? (
+          <p className="gallery-empty">Loading library…</p>
         ) : (
           <>
         {openAlbum != null && (
           <div className="album-nav">
-            <button type="button" className="ghost back-all" onClick={() => setOpenAlbum(null)}>
+            <button type="button" className="ghost back-all" onClick={() => navigate({ kind: "manage-hub" })}>
               ← All albums
             </button>
           </div>
@@ -695,7 +711,11 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
                     </button>
                   )
                 ) : (
-                  <button type="button" className="small ghost" onClick={() => setOpenAlbum(row.id)}>
+                  <button
+                    type="button"
+                    className="small ghost"
+                    onClick={() => navigate({ kind: "manage-album", folder: row.id })}
+                  >
                     Open album
                   </button>
                 )}
@@ -718,7 +738,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
                   key={p.relPath}
                   photo={p}
                   imageCacheEpoch={imageCacheEpoch}
-                  onOpen={(ph) => setViewer(ph)}
+                  onOpen={(ph) => navigate({ kind: "photo", rel: ph.relPath })}
                 />
               ))}
             </div>
@@ -735,12 +755,11 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           openInPhotoshopEnabled={openInPhotoshopEnabled}
           imageCacheEpoch={imageCacheEpoch}
           onDerivativesRefreshed={bumpImageCache}
-          onClose={() => setLightboxIndex(null)}
-          onNavigate={(i) => setLightboxIndex(i)}
-          onEditDetails={(p) => {
-            setLightboxIndex(null);
-            setViewer(p);
-          }}
+          onClose={() => navigate({ kind: "gallery-album", folder: galleryScope })}
+          onNavigate={(i) =>
+            navigate({ kind: "gallery-album", folder: galleryScope, lightboxIndex: i })
+          }
+          onEditDetails={(p) => navigate({ kind: "photo", rel: p.relPath })}
         />
       )}
 
@@ -785,16 +804,20 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         </div>
       )}
 
-      {viewer && (
+      {viewerPhoto && (
         <ViewerModal
-          photo={viewer}
+          photo={viewerPhoto}
           navPhotos={viewerAlbumPhotos}
-          onSelectPhoto={setViewer}
+          onSelectPhoto={(p) => navigate({ kind: "photo", rel: p.relPath }, true)}
           folderDefaultYear={folderDefaultYearForViewer}
           openInPhotoshopEnabled={openInPhotoshopEnabled}
           imageCacheEpoch={imageCacheEpoch}
           onDerivativesRefreshed={bumpImageCache}
-          onClose={() => setViewer(null)}
+          onClose={() => {
+            const folder = folderFromRel(viewerPhoto.relPath);
+            if (folder) navigate({ kind: "gallery-album", folder });
+            else navigate({ kind: "gallery-hub" });
+          }}
           moveTarget={moveTarget}
           setMoveTarget={setMoveTarget}
           folders={folders.map((f) => f.name)}

@@ -100,6 +100,16 @@ body {
   letter-spacing: -0.02em;
 }
 
+.app-title-link {
+  all: unset;
+  cursor: pointer;
+  color: inherit;
+}
+
+.app-title-link:hover {
+  text-decoration: underline;
+}
+
 .header-field {
   display: flex;
   align-items: center;

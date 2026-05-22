@@ -535,10 +535,18 @@ export async function buildServer() {
   });
 
   const clientDist = path.join(process.cwd(), "../client/dist");
-  if (fsSync.existsSync(path.join(clientDist, "index.html"))) {
+  const indexHtml = path.join(clientDist, "index.html");
+  if (fsSync.existsSync(indexHtml)) {
     await app.register(fastifyStatic, {
       root: clientDist,
       prefix: "/",
+    });
+
+    app.setNotFoundHandler((req, reply) => {
+      if (req.url.startsWith("/api/")) {
+        return reply.status(404).send({ error: "not found" });
+      }
+      return reply.sendFile("index.html", clientDist);
     });
   }
 
