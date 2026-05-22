@@ -28,6 +28,7 @@ import {
   refreshDerivativesForPhoto,
   renameFolder,
   startFolderImport,
+  getSyncStatus,
   syncAssetsFromDisk,
 } from "./library.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
@@ -104,6 +105,7 @@ export async function buildServer() {
   app.get("/api/health", async () => ({
     ok: true,
     openInPhotoshop: config.openInPhotoshopEnabled,
+    sync: getSyncStatus(),
   }));
 
   app.post("/api/open-photoshop", async (req, reply) => {
@@ -211,38 +213,23 @@ export async function buildServer() {
     const sortTags = (relPath: string) =>
       [...(tagsByRel.get(relPath) ?? [])].sort((a, b) => a.normX - b.normX);
 
-    const enrich = async (photos: { relPath: string }[]) => {
-      const out = [];
-      for (const ph of photos) {
-        const abs = imageAbsFromRel(ph.relPath);
-        const fromDb = metaByRel.get(ph.relPath);
-        const metadata =
-          fromDb && Object.keys(fromDb).length > 0
-            ? fromDb
-            : abs
-              ? await readSidecarJson(abs)
-              : {};
-        out.push({
-          ...ph,
-          metadata,
-          tags: sortTags(ph.relPath),
-        });
-      }
-      return out;
-    };
+    const enrich = (photos: { relPath: string }[]) =>
+      photos.map((ph) => ({
+        ...ph,
+        metadata: metaByRel.get(ph.relPath) ?? {},
+        tags: sortTags(ph.relPath),
+      }));
 
     const rootDefaultYear = defaultYearForFolder(db, null);
 
     return {
       rootDefaultYear,
-      rootPhotos: await enrich(lib.rootPhotos),
-      folders: await Promise.all(
-        lib.folders.map(async (f) => ({
-          ...f,
-          defaultYear: defaultYearForFolder(db, f.name),
-          photos: await enrich(f.photos),
-        })),
-      ),
+      rootPhotos: enrich(lib.rootPhotos),
+      folders: lib.folders.map((f) => ({
+        ...f,
+        defaultYear: defaultYearForFolder(db, f.name),
+        photos: enrich(f.photos),
+      })),
     };
   });
 

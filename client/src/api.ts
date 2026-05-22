@@ -93,7 +93,11 @@ export async function fetchLibrary(sync?: boolean): Promise<LibraryResponse> {
   return r.json() as Promise<LibraryResponse>;
 }
 
-export type HealthResponse = { ok: boolean; openInPhotoshop?: boolean };
+export type HealthResponse = {
+  ok: boolean;
+  openInPhotoshop?: boolean;
+  sync?: { running: boolean; done: number; total: number };
+};
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const r = await apiFetch("/api/health");

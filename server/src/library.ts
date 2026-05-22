@@ -52,35 +52,33 @@ export async function getLibrary(): Promise<{
   const entries = await listRootEntries();
   const rootFileNames = entries.filter((e) => e.isFile()).map((e) => e.name);
   const rootPhotos = groupFolderImages(rootFileNames, null);
-  const folders: LibraryFolder[] = [];
-
-  for (const ent of entries) {
-    if (!ent.isDirectory()) continue;
-    const dirName = ent.name;
-    if (dirName.startsWith(".")) continue;
-    const dirAbs = path.join(config.photoRoot, dirName);
-    let sub;
-    try {
-      sub = await fs.readdir(dirAbs, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    const fileNames = sub.filter((f) => f.isFile()).map((f) => f.name);
-    if (!imported.has(dirName)) {
-      folders.push({
-        name: dirName,
-        photos: [],
-        needsImport: true,
-        diskPhotoCount: groupFolderImages(fileNames, dirName).length,
-      });
-    } else {
-      folders.push({
-        name: dirName,
-        photos: groupFolderImages(fileNames, dirName),
-        needsImport: false,
-      });
-    }
-  }
+  const dirEntries = entries.filter((e) => e.isDirectory() && !e.name.startsWith("."));
+  const folderResults = await Promise.all(
+    dirEntries.map(async (ent): Promise<LibraryFolder | null> => {
+      const dirName = ent.name;
+      const dirAbs = path.join(config.photoRoot, dirName);
+      try {
+        const sub = await fs.readdir(dirAbs, { withFileTypes: true });
+        const fileNames = sub.filter((f) => f.isFile()).map((f) => f.name);
+        if (!imported.has(dirName)) {
+          return {
+            name: dirName,
+            photos: [],
+            needsImport: true,
+            diskPhotoCount: groupFolderImages(fileNames, dirName).length,
+          };
+        }
+        return {
+          name: dirName,
+          photos: groupFolderImages(fileNames, dirName),
+          needsImport: false,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const folders = folderResults.filter((f): f is LibraryFolder => f != null);
 
   rootPhotos.sort((a, b) => a.filename.localeCompare(b.filename));
   folders.sort((a, b) => a.name.localeCompare(b.name));
@@ -171,23 +169,55 @@ export async function syncOneAsset(p: GroupedPrimary) {
   }
 }
 
+export type SyncStatus = {
+  running: boolean;
+  done: number;
+  total: number;
+};
+
+let syncStatus: SyncStatus = { running: false, done: 0, total: 0 };
+let syncPromise: Promise<void> | null = null;
+
+export function getSyncStatus(): SyncStatus {
+  return { ...syncStatus };
+}
+
 /** Sync DB assets from disk + thumbnails for root and imported folders only. */
-export async function syncAssetsFromDisk() {
+export function syncAssetsFromDisk(): Promise<void> {
+  if (syncPromise) return syncPromise;
+  syncPromise = runSyncAssetsFromDisk().finally(() => {
+    syncPromise = null;
+  });
+  return syncPromise;
+}
+
+async function runSyncAssetsFromDisk() {
   const db = getDb();
   const all = await collectPrimariesToSync();
+  syncStatus = { running: true, done: 0, total: all.length };
   const seen = new Set<string>();
 
-  for (const p of all) {
-    seen.add(p.relPath);
-    await syncOneAsset(p);
-  }
-
-  const rows = db.prepare("SELECT id, rel_path FROM assets").all() as { id: string; rel_path: string }[];
-  for (const r of rows) {
-    if (!seen.has(r.rel_path)) {
-      db.prepare("DELETE FROM person_tags WHERE asset_id = ?").run(r.id);
-      db.prepare("DELETE FROM assets WHERE id = ?").run(r.id);
+  try {
+    for (let i = 0; i < all.length; i++) {
+      const p = all[i]!;
+      seen.add(p.relPath);
+      await syncOneAsset(p);
+      syncStatus.done = i + 1;
+      if (i % 5 === 4) await new Promise<void>((r) => setImmediate(r));
     }
+
+    const rows = db.prepare("SELECT id, rel_path FROM assets").all() as {
+      id: string;
+      rel_path: string;
+    }[];
+    for (const r of rows) {
+      if (!seen.has(r.rel_path)) {
+        db.prepare("DELETE FROM person_tags WHERE asset_id = ?").run(r.id);
+        db.prepare("DELETE FROM assets WHERE id = ?").run(r.id);
+      }
+    }
+  } finally {
+    syncStatus = { running: false, done: syncStatus.done, total: syncStatus.total };
   }
 }
 

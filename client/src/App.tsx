@@ -144,6 +144,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const [rootDefaultYear, setRootDefaultYear] = useState<number | null>(null);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(true);
   const [viewer, setViewer] = useState<LibraryPhoto | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [moveTarget, setMoveTarget] = useState<string>("");
@@ -170,6 +171,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
 
   const load = useCallback(async (sync = false) => {
     setErr(null);
+    setLibraryLoading(true);
     try {
       const lib = await fetchLibrary(sync);
       setRootPhotos(lib.rootPhotos);
@@ -186,6 +188,8 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
         return;
       }
       setErr(String(e));
+    } finally {
+      setLibraryLoading(false);
     }
   }, [onAuthLost]);
 
@@ -449,7 +453,9 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
 
       <main className={appView === "gallery" ? "main-gallery" : "board"}>
         {appView === "gallery" ? (
-          galleryScope === "" ? (
+          libraryLoading ? (
+            <p className="gallery-empty">Loading library…</p>
+          ) : galleryScope === "" ? (
             <GalleryAlbumHub
               albums={galleryAlbumHubEntries}
               imageCacheEpoch={imageCacheEpoch}
