@@ -871,8 +871,8 @@ function ViewerModal({
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-back viewer-modal-back" onClick={onClose}>
+      <div className="modal viewer-modal" onClick={(e) => e.stopPropagation()}>
         <div className="viewer">
           <div className="viewer-primary">
             <ViewerImageZoom

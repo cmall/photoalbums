@@ -1027,6 +1027,79 @@ button.sugg {
   max-width: 900px;
 }
 
+.viewer-modal-back {
+  padding: 1.25rem;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.modal.viewer-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  padding: 0.85rem 1rem 1rem;
+  overflow: hidden;
+}
+
+.modal.viewer-modal .viewer {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) min(300px, 26vw);
+  align-items: stretch;
+  gap: 0.85rem;
+}
+
+.modal.viewer-modal .viewer-primary {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.modal.viewer-modal .viewer-toolbar,
+.modal.viewer-modal .viewer-nav-hint,
+.modal.viewer-modal .viewer-names {
+  flex-shrink: 0;
+}
+
+.modal.viewer-modal .viewer-img-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+}
+
+.modal.viewer-modal .viewer-img {
+  max-height: none;
+  height: auto;
+}
+
+.modal.viewer-modal .side {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .viewer-modal-back {
+    padding: 0.5rem;
+  }
+
+  .modal.viewer-modal {
+    padding: 0.65rem 0.75rem 0.75rem;
+  }
+
+  .modal.viewer-modal .viewer {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .modal.viewer-modal .side {
+    max-height: 38vh;
+  }
+}
+
 .modal h3 {
   margin: 0 0 0.5rem;
 }
