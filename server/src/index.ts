@@ -28,6 +28,7 @@ import {
   renameFolder,
   startFolderImport,
   getSyncStatus,
+  scheduleFolderThumbnailWarm,
   syncAssetsFromDisk,
 } from "./library.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
@@ -190,6 +191,7 @@ export async function buildServer() {
     if (!folder) return reply.status(400).send({ error: "folder required" });
     const db = getDb();
     const photos = getFolderPhotosFromDb(folder);
+    scheduleFolderThumbnailWarm(folder);
     const { enrich } = loadLibraryEnrichmentForRels(
       db,
       photos.map((p) => p.relPath),

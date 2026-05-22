@@ -1,6 +1,6 @@
 import type { LibraryPhoto } from "./api";
 import { mediaUrl } from "./api";
-import { LazyPhotoImg } from "./LazyPhotoImg";
+import { PhotoThumb } from "./PhotoThumb";
 
 export type GalleryAlbumHubEntry = { name: string; photos: LibraryPhoto[]; photoCount: number };
 
@@ -48,7 +48,7 @@ export function GalleryAlbumHub({
                   className="gallery-album-thumb"
                   onClick={() => onOpenPhoto(album.name, i)}
                 >
-                  <LazyPhotoImg src={mediaUrl(p.relPath, "thumb", imageCacheEpoch)} />
+                  <PhotoThumb src={mediaUrl(p.relPath, "thumb", imageCacheEpoch)} />
                 </button>
               ))}
               {Array.from({ length: padCount }, (_, i) => (

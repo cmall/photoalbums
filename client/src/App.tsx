@@ -37,7 +37,7 @@ import {
   type TagInfo,
 } from "./api";
 import { folderFromRel } from "./app-url";
-import { LazyPhotoImg } from "./LazyPhotoImg";
+import { PhotoThumb } from "./PhotoThumb";
 import { normalizeFolderFromSummary, normalizeLibraryPhoto } from "./normalize";
 import { useAppRoute } from "./useAppRoute";
 
@@ -82,7 +82,7 @@ function PhotoTile({
     <div className="tile-wrap">
       <button type="button" className="tile" onClick={() => onOpen(photo)}>
         <div className="tile-img-box">
-          <LazyPhotoImg src={mediaUrl(photo.relPath, "thumb", imageCacheEpoch)} />
+          <PhotoThumb src={mediaUrl(photo.relPath, "thumb", imageCacheEpoch)} />
           {showNamesUnderThumb &&
             sortedTags.map((t) => (
               <span

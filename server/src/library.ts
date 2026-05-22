@@ -8,7 +8,8 @@ import { ensureDerivatives } from "./images.js";
 import { backAbsFromPrimaryRel, cachePathsForRel, companionsFromDisk, readSidecarJson, statMtimeMs, photoMetadataToDbColumns } from "./metadata.js";
 import { groupFolderImages, type GroupedPrimary } from "./photo-groups.js";
 import { isImageExt, normalizeRel, resolveSafeUnderRoot, toRelFromRoot } from "./paths.js";
-import { assetRowToGroupedPrimary } from "./asset-catalog.js";
+import { assetRowToGroupedPrimary, getFolderPhotosFromDb } from "./asset-catalog.js";
+import { resolveOrBuildDerivative } from "./media-serve.js";
 
 function sidecarAbs(imageAbs: string) {
   const dir = path.dirname(imageAbs);
@@ -356,6 +357,26 @@ export function getSyncStatus(): SyncStatus {
   return { ...syncStatus };
 }
 
+const warmedFolders = new Set<string>();
+
+/** Build missing thumbnails for one album in the background (deduped per folder). */
+export function scheduleFolderThumbnailWarm(folderName: string) {
+  if (warmedFolders.has(folderName)) return;
+  warmedFolders.add(folderName);
+  void warmFolderThumbnails(folderName).catch((err) => {
+    console.warn(`Thumbnail warm failed for ${folderName}:`, err);
+    warmedFolders.delete(folderName);
+  });
+}
+
+async function warmFolderThumbnails(folderName: string) {
+  const photos = getFolderPhotosFromDb(folderName);
+  for (let i = 0; i < photos.length; i++) {
+    await resolveOrBuildDerivative(photos[i]!.relPath, "thumb");
+    if (i % 2 === 1) await new Promise<void>((r) => setImmediate(r));
+  }
+}
+
 /** Sync DB assets from disk + thumbnails for root and imported folders only. */
 export function syncAssetsFromDisk(): Promise<void> {
   if (syncPromise) return syncPromise;
@@ -384,8 +405,24 @@ async function runSyncAssetsFromDisk() {
       id: string;
       rel_path: string;
     }[];
-    for (const r of rows) {
-      if (!seen.has(r.rel_path)) {
+
+    /** Avoid wiping the catalog when the library path is empty or misconfigured. */
+    if (all.length === 0 && rows.length > 0) {
+      console.warn(
+        "Library sync found zero photos on disk; skipping catalog prune (check PHOTO_LIBRARY_ROOT).",
+      );
+    } else {
+      for (const r of rows) {
+        if (seen.has(r.rel_path)) continue;
+        const abs = resolveSafeUnderRoot(r.rel_path);
+        if (abs) {
+          try {
+            await fs.access(abs);
+            continue;
+          } catch {
+            /* file gone */
+          }
+        }
         db.prepare("DELETE FROM person_tags WHERE asset_id = ?").run(r.id);
         db.prepare("DELETE FROM assets WHERE id = ?").run(r.id);
       }
@@ -463,6 +500,12 @@ export async function refreshDerivativesForPhoto(primaryRel: string) {
   const fname = path.posix.basename(primaryRel);
   const g = groups.find((x) => x.filename === fname);
   if (!g) throw new Error("Photo not found on disk");
+  const disk = companionsFromDisk(g.relPath);
+  const absDisplay = resolveSafeUnderRoot(disk.thumbSourceRel);
+  if (!absDisplay) throw new Error("Photo file not readable");
+  await ensureDerivatives(absDisplay, g.relPath, "", { force: true });
+  const backAbs = disk.backRelPath ? resolveSafeUnderRoot(disk.backRelPath) : backAbsFromPrimaryRel(g.relPath);
+  if (backAbs) await ensureDerivatives(backAbs, g.relPath, "__back", { force: true });
   await syncOneAsset(g);
 }
 
