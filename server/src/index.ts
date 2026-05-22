@@ -31,6 +31,7 @@ import {
   syncAssetsFromDisk,
 } from "./library.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
+import { repoRootDir } from "./install-paths.js";
 import { openFileInPhotoshop, resolveAbsForExternalEditor } from "./open-photoshop.js";
 import { loadLibraryEnrichmentForRels } from "./library-enrich.js";
 import { registerAuth } from "./auth.js";
@@ -534,19 +535,31 @@ export async function buildServer() {
       .send(stream);
   });
 
-  const clientDist = path.join(process.cwd(), "../client/dist");
+  const clientDist = path.join(repoRootDir(), "client/dist");
+  const assetsDir = path.join(clientDist, "assets");
   const indexHtml = path.join(clientDist, "index.html");
   if (fsSync.existsSync(indexHtml)) {
-    await app.register(fastifyStatic, {
-      root: clientDist,
-      prefix: "/",
-    });
+    if (fsSync.existsSync(assetsDir)) {
+      await app.register(fastifyStatic, {
+        root: assetsDir,
+        prefix: "/assets/",
+      });
+    }
+
+    const sendSpa = async (_req: unknown, reply: { type: (t: string) => { send: (body: fsSync.ReadStream) => unknown } }) =>
+      reply.type("text/html").send(fsSync.createReadStream(indexHtml));
+
+    app.get("/", sendSpa);
 
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/")) {
+      const p = req.url.split("?")[0] ?? req.url;
+      if (p.startsWith("/api/")) {
         return reply.status(404).send({ error: "not found" });
       }
-      return reply.sendFile("index.html", clientDist);
+      if (p.startsWith("/assets/")) {
+        return reply.status(404).send("Not Found");
+      }
+      return sendSpa(req, reply);
     });
   }
 

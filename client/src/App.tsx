@@ -135,6 +135,14 @@ function findPhotoInFolders(
   return null;
 }
 
+function findFolder(folders: LibraryFolder[], name: string): LibraryFolder | undefined {
+  if (!name) return undefined;
+  return (
+    folders.find((f) => f.name === name) ??
+    folders.find((f) => f.name.toLowerCase() === name.toLowerCase())
+  );
+}
+
 function previewPhotoFromRel(relPath: string): LibraryPhoto {
   const filename = relPath.split("/").pop() ?? relPath;
   const folder = relPath.includes("/") ? relPath.split("/")[0]! : null;
@@ -200,16 +208,28 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const albumCacheRef = useRef<Map<string, LibraryPhoto[]>>(new Map());
   const [rootPhotosLoaded, setRootPhotosLoaded] = useState(false);
 
-  const loadAlbumPhotos = useCallback(async (folderName: string): Promise<LibraryPhoto[]> => {
-    const cached = albumCacheRef.current.get(folderName);
-    if (cached) return cached;
-    const photos = await fetchAlbumPhotos(folderName);
+  const applyAlbumPhotosToFolder = useCallback((folderName: string, photos: LibraryPhoto[]) => {
     albumCacheRef.current.set(folderName, photos);
-    setFolders((prev) =>
-      prev.map((f) => (f.name === folderName ? { ...f, photos, photosLoaded: true } : f)),
-    );
-    return photos;
+    setFolders((prev) => {
+      const row = findFolder(prev, folderName);
+      const key = row?.name ?? folderName;
+      return prev.map((f) => (f.name === key ? { ...f, photos, photosLoaded: true } : f));
+    });
   }, []);
+
+  const loadAlbumPhotos = useCallback(
+    async (folderName: string): Promise<LibraryPhoto[]> => {
+      const cached = albumCacheRef.current.get(folderName);
+      if (cached) {
+        applyAlbumPhotosToFolder(folderName, cached);
+        return cached;
+      }
+      const photos = await fetchAlbumPhotos(folderName);
+      applyAlbumPhotosToFolder(folderName, photos);
+      return photos;
+    },
+    [applyAlbumPhotosToFolder],
+  );
 
   const loadRootPhotos = useCallback(async (): Promise<LibraryPhoto[]> => {
     if (rootPhotosLoaded) return rootPhotos;
@@ -280,7 +300,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   }, [bumpImageCache]);
 
   useEffect(() => {
-    const folder =
+    const folderName =
       route.kind === "gallery-album"
         ? route.folder
         : route.kind === "manage-album"
@@ -288,11 +308,18 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           : route.kind === "photo"
             ? folderFromRel(route.rel)
             : null;
-    if (!folder) return;
-    void loadAlbumPhotos(folder).catch((e) => {
+    if (!folderName || libraryLoading) return;
+    const row = findFolder(folders, folderName);
+    if (row?.photosLoaded) return;
+    const cached = albumCacheRef.current.get(folderName);
+    if (cached) {
+      applyAlbumPhotosToFolder(folderName, cached);
+      return;
+    }
+    void loadAlbumPhotos(folderName).catch((e) => {
       if (!(e instanceof AuthRequiredError)) setErr(String(e));
     });
-  }, [route, loadAlbumPhotos]);
+  }, [route, folders, libraryLoading, loadAlbumPhotos, applyAlbumPhotosToFolder]);
 
   useEffect(() => {
     if (route.kind !== "photo" || folderFromRel(route.rel)) return;
@@ -411,16 +438,20 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
 
   const galleryPhotos = useMemo(() => {
     if (galleryScope === "") return [];
-    const folder = folders.find((f) => f.name === galleryScope);
+    const folder = findFolder(folders, galleryScope);
     if (!folder || folder.needsImport) return [];
     const pool = folder.photosLoaded ? folder.photos : folder.previewPhotos;
     return applyFilter(pool);
   }, [folders, galleryScope, applyFilter]);
 
+  const activeGalleryFolder = findFolder(folders, galleryScope);
+
   const galleryAlbumLoading =
     route.kind === "gallery-album" &&
+    !libraryLoading &&
+    !!activeGalleryFolder &&
     galleryPhotos.length === 0 &&
-    !folders.find((f) => f.name === route.folder)?.photosLoaded;
+    !activeGalleryFolder.photosLoaded;
 
   const viewerPhoto = useMemo(() => {
     if (route.kind !== "photo") return null;
@@ -485,7 +516,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
       : null;
 
   useEffect(() => {
-    if (route.kind !== "gallery-album" || route.lightboxIndex == null) return;
+    if (route.kind !== "gallery-album" || typeof route.lightboxIndex !== "number") return;
     if (galleryPhotos.length === 0) {
       navigate({ kind: "gallery-album", folder: route.folder }, true);
     } else if (route.lightboxIndex >= galleryPhotos.length) {
@@ -652,10 +683,12 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
                 navigate({ kind: "gallery-album", folder: folderName });
               }}
             />
+          ) : libraryLoading || !activeGalleryFolder ? (
+            <p className="gallery-empty">Loading album…</p>
           ) : galleryAlbumLoading ? (
             <p className="gallery-empty">Loading album…</p>
-          ) : !folders.find((f) => f.name === galleryScope) ? (
-            <p className="gallery-empty">Album not found.</p>
+          ) : activeGalleryFolder.needsImport ? (
+            <p className="gallery-empty">This album has not been imported yet.</p>
           ) : (
             <MasonryGallery
               photos={galleryPhotos}
@@ -665,10 +698,11 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
               }
             />
           )
-        ) : libraryLoading ? (
-          <p className="gallery-empty">Loading library…</p>
         ) : (
           <>
+        {libraryLoading && (
+          <p className="gallery-empty">Loading library…</p>
+        )}
         {openAlbum != null && (
           <div className="album-nav">
             <button type="button" className="ghost back-all" onClick={() => navigate({ kind: "manage-hub" })}>
