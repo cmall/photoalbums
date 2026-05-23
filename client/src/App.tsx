@@ -1089,7 +1089,7 @@ function ViewerModal({
 
   useEffect(() => {
     if (tagMode) {
-      fitViewerImage(transformRef.current);
+      fitViewerImage(transformRef.current, imgRef.current);
       setViewScale(1);
     }
   }, [tagMode]);
@@ -1151,6 +1151,7 @@ function ViewerModal({
               tagging={tagMode}
               onScaleChange={setViewScale}
               transformRef={transformRef}
+              imageRef={imgRef}
               onBackgroundClick={() => tagMode && setPending(null)}
               header={
                 <div className="viewer-nav" role="toolbar" aria-label="Photo navigation">
@@ -1183,7 +1184,6 @@ function ViewerModal({
                 src={viewerImgSrc}
                 alt=""
                 className="viewer-img"
-                onLoad={() => fitViewerImage(transformRef.current)}
                 onClick={(e) => {
                   e.stopPropagation();
                   onImageClick(e);

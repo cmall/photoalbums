@@ -1078,6 +1078,28 @@ button.sugg {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
+}
+
+.modal.viewer-modal .viewer-zoom-stack {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.viewer-modal .viewer-zoom-stack > * {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column;
+}
+
+.modal.viewer-modal .viewer-zoom-stack .react-transform-wrapper {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column;
 }
 
 .modal.viewer-modal .viewer-toolbar,
@@ -1087,14 +1109,32 @@ button.sugg {
 }
 
 .modal.viewer-modal .viewer-img-wrap {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
+  height: auto !important;
   max-height: none !important;
+  overflow: hidden !important;
+}
+
+.modal.viewer-modal .viewer-img-inner {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.modal.viewer-modal .viewer-img-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal.viewer-modal .viewer-img {
-  max-height: none;
-  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain;
 }
 
 .modal.viewer-modal .side {
