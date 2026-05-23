@@ -1089,7 +1089,7 @@ function ViewerModal({
 
   useEffect(() => {
     if (tagMode) {
-      fitViewerImage(transformRef.current, imgRef.current);
+      fitViewerImage(transformRef.current);
       setViewScale(1);
     }
   }, [tagMode]);
