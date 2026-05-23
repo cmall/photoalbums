@@ -37,6 +37,7 @@ import {
   type TagInfo,
 } from "./api";
 import { folderFromRel } from "./app-url";
+import { PhotoDateEditor } from "./PhotoDateEditor";
 import { PhotoThumb } from "./PhotoThumb";
 import { normalizeFolderFromSummary, normalizeLibraryPhoto } from "./normalize";
 import { useAppRoute } from "./useAppRoute";
@@ -48,20 +49,6 @@ function useDebounced<T>(value: T, ms: number): T {
     return () => clearTimeout(t);
   }, [value, ms]);
   return d;
-}
-
-/** Normalize stored date strings to YYYY-MM-DD for `<input type="date">`. */
-function toDateInputValue(raw: string | undefined): string {
-  if (!raw?.trim()) return "";
-  const s = raw.trim();
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const t = Date.parse(s);
-  if (!Number.isNaN(t)) {
-    const d = new Date(t);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-  return "";
 }
 
 function PhotoTile({
@@ -934,7 +921,6 @@ function ViewerModal({
     lastNormY: number;
   } | null>(null);
 
-  const [dateInput, setDateInput] = useState("");
   type ViewerImageSource = "enhanced" | "primary" | "back";
   const [imageSource, setImageSource] = useState<ViewerImageSource>("enhanced");
   const [refreshingPreview, setRefreshingPreview] = useState(false);
@@ -1065,14 +1051,12 @@ function ViewerModal({
 
   useEffect(() => {
     setMeta(photo.metadata);
-    const s = toDateInputValue(photo.metadata.date);
-    setDateInput(s || (folderDefaultYear != null ? `${folderDefaultYear}-01-01` : ""));
     setHoveredViewerTagId(null);
     setDragOverride({});
     markerDragRef.current = null;
     setImageSource("enhanced");
     setViewScale(1);
-  }, [photo.relPath, photo.metadata.date, folderDefaultYear]);
+  }, [photo.relPath, photo.metadata]);
 
   useEffect(() => {
     if (tagMode) {
@@ -1109,10 +1093,6 @@ function ViewerModal({
   async function saveMeta(partial: Partial<PhotoMetadata>) {
     const next = await patchMetadata(photo.relPath, partial);
     setMeta(next);
-    if ("date" in partial) {
-      const s = toDateInputValue(next.date);
-      setDateInput(s || "");
-    }
     onRefresh();
   }
 
@@ -1368,19 +1348,19 @@ function ViewerModal({
               </div>
             )}
             <h4>Details</h4>
-            <label>
-              Date
-              <input
-                type="date"
-                className="date-input"
-                value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
-                onBlur={() => void saveMeta({ date: dateInput.trim() === "" ? "" : dateInput })}
+            <div className="side-field">
+              <span className="side-field-label">Date</span>
+              <PhotoDateEditor
+                key={photo.relPath}
+                storedDate={meta.date}
+                defaultYear={folderDefaultYear}
+                onSave={async (date) => {
+                  const next = await patchMetadata(photo.relPath, { date });
+                  setMeta(next);
+                  onRefresh();
+                }}
               />
-              {folderDefaultYear != null && (
-                <span className="field-hint">Default year from this album: {folderDefaultYear}</span>
-              )}
-            </label>
+            </div>
             <label>
               Location
               <input

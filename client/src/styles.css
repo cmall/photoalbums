@@ -1350,7 +1350,8 @@ button.sugg {
   white-space: nowrap;
 }
 
-.side label {
+.side label,
+.side-field {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -1359,8 +1360,42 @@ button.sugg {
   color: #4a5560;
 }
 
+.side-field-label {
+  font-weight: 500;
+}
+
 .date-input {
   min-height: 2.35rem;
+}
+
+.photo-date-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.photo-date-kind select {
+  width: 100%;
+  min-height: 2.35rem;
+  margin-top: 0.2rem;
+}
+
+.photo-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.date-part-input {
+  width: 100%;
+  min-height: 2.35rem;
+  margin-top: 0.2rem;
+}
+
+.photo-date-preview-value {
+  font-family: ui-monospace, monospace;
+  color: #374151;
 }
 
 .field-hint {

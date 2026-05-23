@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { LibraryPhoto } from "./api";
 import { mediaUrl, openInPhotoshopApi, refreshDerivativesApi } from "./api";
+import { displayPhotoDate } from "./photo-date";
 
 type ImageSource = "enhanced" | "primary" | "back";
 
@@ -203,11 +204,14 @@ export function GalleryLightbox({
                 <p className="lightbox-caption-body">{caption}</p>
               </section>
             )}
-            {photo.metadata.date?.trim() && (
-              <p className="lightbox-meta-line">
-                <strong>Date:</strong> {photo.metadata.date}
-              </p>
-            )}
+            {(() => {
+              const dateLabel = displayPhotoDate(photo.metadata.date);
+              return dateLabel ? (
+                <p className="lightbox-meta-line">
+                  <strong>Date:</strong> {dateLabel}
+                </p>
+              ) : null;
+            })()}
             {photo.metadata.location?.trim() && (
               <p className="lightbox-meta-line">
                 <strong>Place:</strong> {photo.metadata.location}

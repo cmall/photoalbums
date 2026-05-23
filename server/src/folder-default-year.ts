@@ -1,11 +1,8 @@
 import type Database from "better-sqlite3";
+import { parseYearFromStored } from "./photo-date.js";
 
 function parseYearFromDateString(s: string): number | null {
-  const m = s.trim().match(/^(\d{4})/);
-  if (m) return parseInt(m[1]!, 10);
-  const t = Date.parse(s);
-  if (!Number.isNaN(t)) return new Date(t).getFullYear();
-  return null;
+  return parseYearFromStored(s);
 }
 
 /** Year from the most recently edited asset in this row (metadata date first, else sidecar mtime). */
