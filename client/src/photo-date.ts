@@ -196,11 +196,11 @@ export function parseYearFromStored(stored: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** Ascending sort key; undated photos sort last. */
+/** Ascending sort key; undated photos sort first. */
 export function photoDateSortKey(stored: string | undefined | null): number {
-  if (!stored?.trim()) return Number.MAX_SAFE_INTEGER;
+  if (!stored?.trim()) return 0;
   const p = parseStoredPhotoDate(stored);
-  if (!p) return Number.MAX_SAFE_INTEGER;
+  if (!p) return 0;
   switch (p.kind) {
     case "exact":
       return p.year * 10_000 + p.month * 100 + p.day;
