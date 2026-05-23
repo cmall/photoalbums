@@ -31,6 +31,7 @@ import {
   scheduleFolderThumbnailWarm,
   syncAssetsFromDisk,
 } from "./library.js";
+import { compareByDateThenFilename } from "./photo-date.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
 import { repoRootDir } from "./install-paths.js";
 import { openFileInPhotoshop, resolveAbsForExternalEditor } from "./open-photoshop.js";
@@ -196,10 +197,17 @@ export async function buildServer() {
       db,
       photos.map((p) => p.relPath),
     );
+    const enriched = enrich(photos);
+    enriched.sort((a, b) =>
+      compareByDateThenFilename(
+        { date: (a as { metadata: { date?: string } }).metadata.date, filename: a.filename },
+        { date: (b as { metadata: { date?: string } }).metadata.date, filename: b.filename },
+      ),
+    );
     return {
       folder,
       defaultYear: defaultYearForFolder(db, folder),
-      photos: enrich(photos),
+      photos: enriched,
     };
   });
 
@@ -222,9 +230,16 @@ export async function buildServer() {
       db,
       photos.map((p) => p.relPath),
     );
+    const enriched = enrich(photos);
+    enriched.sort((a, b) =>
+      compareByDateThenFilename(
+        { date: (a as { metadata: { date?: string } }).metadata.date, filename: a.filename },
+        { date: (b as { metadata: { date?: string } }).metadata.date, filename: b.filename },
+      ),
+    );
     return {
       rootDefaultYear: defaultYearForFolder(db, null),
-      photos: enrich(photos),
+      photos: enriched,
     };
   });
 

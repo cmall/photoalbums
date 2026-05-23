@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   exactDateInputValue,
   fieldsFromExactDateInput,
@@ -25,33 +25,28 @@ const MONTH_OPTIONS = [
 
 export function PhotoDateEditor({
   storedDate,
-  defaultYear,
   onSave,
 }: {
   storedDate: string | undefined;
-  defaultYear?: number | null;
   onSave: (date: string) => void | Promise<void>;
 }) {
-  const [fields, setFields] = useState<PhotoDateFields>(() =>
-    fieldsFromStored(storedDate, defaultYear),
-  );
+  const [fields, setFields] = useState<PhotoDateFields>(() => fieldsFromStored(storedDate));
+  const storedRef = useRef(storedDate?.trim() ?? "");
 
   useEffect(() => {
-    setFields(fieldsFromStored(storedDate, defaultYear));
-  }, [storedDate, defaultYear]);
-
-  function setKind(kind: PhotoDateKind) {
-    setFields((prev) => {
-      const next = { ...prev, kind };
-      if (kind === "year" && !next.year && defaultYear != null) {
-        next.year = String(defaultYear);
-      }
-      return next;
-    });
-  }
+    storedRef.current = storedDate?.trim() ?? "";
+    setFields(fieldsFromStored(storedDate));
+  }, [storedDate]);
 
   function commit() {
-    void onSave(storedFromFields(fields));
+    const next = storedFromFields(fields);
+    if (next === storedRef.current) return;
+    storedRef.current = next;
+    void onSave(next);
+  }
+
+  function setKind(kind: PhotoDateKind) {
+    setFields((prev) => ({ ...prev, kind }));
   }
 
   const preview = storedFromFields(fields);
@@ -82,7 +77,7 @@ export function PhotoDateEditor({
             className="date-part-input"
             min={1000}
             max={9999}
-            placeholder={defaultYear != null ? String(defaultYear) : "1960"}
+            placeholder="e.g. 1960"
             value={fields.year}
             onChange={(e) => setFields((f) => ({ ...f, year: e.target.value }))}
             onBlur={commit}
@@ -172,7 +167,7 @@ export function PhotoDateEditor({
             className="date-part-input"
             min={1000}
             max={9999}
-            placeholder="1960"
+            placeholder="e.g. 1960"
             value={fields.year}
             onChange={(e) => setFields((f) => ({ ...f, year: e.target.value }))}
             onBlur={commit}
@@ -183,9 +178,6 @@ export function PhotoDateEditor({
       <p className="field-hint photo-date-preview">
         Stored as: <span className="photo-date-preview-value">{previewLabel}</span>
       </p>
-      {defaultYear != null && fields.kind === "year" && !storedDate?.trim() && (
-        <span className="field-hint">Default from album: {defaultYear}</span>
-      )}
     </div>
   );
 }

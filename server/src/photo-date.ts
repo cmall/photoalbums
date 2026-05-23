@@ -59,3 +59,31 @@ export function parseYearFromStored(stored: string): number | null {
   const m = stored.trim().match(/^(\d{4})/);
   return m ? Number(m[1]) : null;
 }
+
+/** Ascending sort key; undated photos sort last. */
+export function photoDateSortKey(stored: string | undefined | null): number {
+  if (!stored?.trim()) return Number.MAX_SAFE_INTEGER;
+  const p = parseStoredPhotoDate(stored);
+  if (!p) return Number.MAX_SAFE_INTEGER;
+  switch (p.kind) {
+    case "exact":
+      return p.year * 10_000 + p.month * 100 + p.day;
+    case "month":
+      return p.year * 10_000 + p.month * 100;
+    case "year":
+    case "circa":
+      return p.year * 10_000;
+    case "range":
+      return p.year * 10_000;
+  }
+}
+
+export function compareByDateThenFilename(
+  a: { date?: string | null; filename: string },
+  b: { date?: string | null; filename: string },
+): number {
+  const ka = photoDateSortKey(a.date ?? undefined);
+  const kb = photoDateSortKey(b.date ?? undefined);
+  if (ka !== kb) return ka - kb;
+  return a.filename.localeCompare(b.filename, undefined, { sensitivity: "base" });
+}

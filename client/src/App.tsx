@@ -39,6 +39,7 @@ import {
 import { folderFromRel } from "./app-url";
 import { PhotoDateEditor } from "./PhotoDateEditor";
 import { PhotoThumb } from "./PhotoThumb";
+import { sortPhotosByDate } from "./photo-date";
 import { normalizeFolderFromSummary, normalizeLibraryPhoto } from "./normalize";
 import { useAppRoute } from "./useAppRoute";
 
@@ -171,7 +172,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     route.kind === "gallery-album" && route.lightboxIndex != null ? route.lightboxIndex : null;
 
   const [rootPhotos, setRootPhotos] = useState<LibraryPhoto[]>([]);
-  const [rootDefaultYear, setRootDefaultYear] = useState<number | null>(null);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(true);
@@ -230,6 +230,22 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     return photos;
   }, [rootPhotos, rootPhotosLoaded]);
 
+  const patchPhotoInState = useCallback((relPath: string, metadata: PhotoMetadata) => {
+    const patch = (p: LibraryPhoto): LibraryPhoto =>
+      p.relPath === relPath ? { ...p, metadata } : p;
+    setRootPhotos((prev) => prev.map(patch));
+    setFolders((prev) =>
+      prev.map((f) => ({
+        ...f,
+        photos: f.photos.map(patch),
+        previewPhotos: (f.previewPhotos ?? []).map(patch),
+      })),
+    );
+    for (const [name, list] of albumCacheRef.current.entries()) {
+      albumCacheRef.current.set(name, list.map(patch));
+    }
+  }, []);
+
   const load = useCallback(async (sync = false) => {
     setErr(null);
     setLibraryLoading(true);
@@ -239,7 +255,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
       albumCacheRef.current.clear();
       setRootPhotos(summary.rootPreviewPhotos.map(normalizeLibraryPhoto));
       setRootPhotosLoaded(false);
-      setRootDefaultYear(summary.rootDefaultYear);
       setFolders(summary.folders.map(normalizeFolderFromSummary));
     } catch (e) {
       if (e instanceof AuthRequiredError) {
@@ -448,7 +463,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     const folder = findFolder(folders, galleryScope);
     if (!folder || folder.needsImport) return [];
     const pool = folder.photosLoaded ? folder.photos : folder.previewPhotos ?? [];
-    return applyFilter(pool);
+    return sortPhotosByDate(applyFilter(pool));
   }, [folders, galleryScope, applyFilter]);
 
   const activeGalleryFolder = findFolder(folders, galleryScope);
@@ -473,7 +488,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     return folders.map((f) => ({
       id: f.name,
       title: f.name,
-      photos: f.photosLoaded ? applyFilter(f.photos) : f.previewPhotos ?? [],
+      photos: sortPhotosByDate(f.photosLoaded ? applyFilter(f.photos) : f.previewPhotos ?? []),
       photoCount: f.photoCount,
       folderForRename: f.name,
       defaultYear: f.defaultYear,
@@ -491,9 +506,10 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const viewerAlbumPhotos = useMemo(() => {
     if (route.kind !== "photo") return [];
     const folder = folderFromRel(route.rel);
-    if (folder == null) return applyFilter(rootPhotos);
+    if (folder == null) return sortPhotosByDate(applyFilter(rootPhotos));
     const row = folders.find((f) => f.name === folder);
-    return row ? applyFilter(row.photosLoaded ? row.photos : row.previewPhotos ?? []) : [];
+    const pool = row ? (row.photosLoaded ? row.photos : row.previewPhotos ?? []) : [];
+    return sortPhotosByDate(applyFilter(pool));
   }, [route, rootPhotos, folders, applyFilter]);
 
   async function applyPersonFilter(person: Person) {
@@ -513,16 +529,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     setPersonFilter("");
     setPersonSuggestions([]);
   }
-
-  const folderDefaultYearForViewer =
-    route.kind === "photo"
-      ? (() => {
-          const folder = folderFromRel(route.rel);
-          return folder != null
-            ? (folders.find((f) => f.name === folder)?.defaultYear ?? null)
-            : rootDefaultYear;
-        })()
-      : null;
 
   useEffect(() => {
     if (route.kind !== "gallery-album" || typeof route.lightboxIndex !== "number") return;
@@ -852,7 +858,6 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           photo={viewerPhoto}
           navPhotos={viewerAlbumPhotos}
           onSelectPhoto={(p) => navigate({ kind: "photo", rel: p.relPath }, true)}
-          folderDefaultYear={folderDefaultYearForViewer}
           openInPhotoshopEnabled={openInPhotoshopEnabled}
           imageCacheEpoch={imageCacheEpoch}
           onDerivativesRefreshed={bumpImageCache}
@@ -864,6 +869,7 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           moveTarget={moveTarget}
           setMoveTarget={setMoveTarget}
           folders={folders.map((f) => f.name)}
+          onPhotoPatched={patchPhotoInState}
           onRefresh={() => load(true)}
         />
       )}
@@ -875,7 +881,6 @@ function ViewerModal({
   photo,
   navPhotos,
   onSelectPhoto,
-  folderDefaultYear,
   openInPhotoshopEnabled,
   imageCacheEpoch,
   onDerivativesRefreshed,
@@ -883,12 +888,12 @@ function ViewerModal({
   moveTarget,
   setMoveTarget,
   folders,
+  onPhotoPatched,
   onRefresh,
 }: {
   photo: LibraryPhoto;
   navPhotos: LibraryPhoto[];
   onSelectPhoto: (p: LibraryPhoto) => void;
-  folderDefaultYear: number | null;
   openInPhotoshopEnabled: boolean;
   imageCacheEpoch: number;
   onDerivativesRefreshed: () => void;
@@ -896,6 +901,7 @@ function ViewerModal({
   moveTarget: string;
   setMoveTarget: (s: string) => void;
   folders: string[];
+  onPhotoPatched: (relPath: string, metadata: PhotoMetadata) => void;
   onRefresh: () => Promise<void>;
 }) {
   const DRAG_THRESHOLD_PX = 8;
@@ -1056,7 +1062,7 @@ function ViewerModal({
     markerDragRef.current = null;
     setImageSource("enhanced");
     setViewScale(1);
-  }, [photo.relPath, photo.metadata]);
+  }, [photo.relPath]);
 
   useEffect(() => {
     if (tagMode) {
@@ -1093,7 +1099,7 @@ function ViewerModal({
   async function saveMeta(partial: Partial<PhotoMetadata>) {
     const next = await patchMetadata(photo.relPath, partial);
     setMeta(next);
-    onRefresh();
+    onPhotoPatched(photo.relPath, next);
   }
 
   async function submitTag(person: Person | null) {
@@ -1351,13 +1357,9 @@ function ViewerModal({
             <div className="side-field">
               <span className="side-field-label">Date</span>
               <PhotoDateEditor
-                key={photo.relPath}
                 storedDate={meta.date}
-                defaultYear={folderDefaultYear}
                 onSave={async (date) => {
-                  const next = await patchMetadata(photo.relPath, { date });
-                  setMeta(next);
-                  onRefresh();
+                  await saveMeta({ date });
                 }}
               />
             </div>

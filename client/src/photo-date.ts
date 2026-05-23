@@ -30,10 +30,10 @@ const MONTH_NAMES = [
   "December",
 ];
 
-export function emptyPhotoDateFields(defaultYear?: number | null): PhotoDateFields {
+export function emptyPhotoDateFields(): PhotoDateFields {
   return {
     kind: "year",
-    year: defaultYear != null ? String(defaultYear) : "",
+    year: "",
     month: "",
     day: "",
     yearEnd: "",
@@ -86,11 +86,8 @@ export function parseStoredPhotoDate(stored: string): ParsedPhotoDate | null {
   return null;
 }
 
-export function fieldsFromStored(
-  stored: string | undefined,
-  defaultYear?: number | null,
-): PhotoDateFields {
-  if (!stored?.trim()) return emptyPhotoDateFields(defaultYear);
+export function fieldsFromStored(stored: string | undefined): PhotoDateFields {
+  if (!stored?.trim()) return emptyPhotoDateFields();
   const p = parseStoredPhotoDate(stored);
   if (!p) {
     return { kind: "year", year: stored.trim(), month: "", day: "", yearEnd: "" };
@@ -194,12 +191,43 @@ export function displayPhotoDate(stored: string | undefined | null): string | nu
 
 export function parseYearFromStored(stored: string): number | null {
   const p = parseStoredPhotoDate(stored);
-  if (p) {
-    if (p.kind === "range") return p.year;
-    return p.year;
-  }
+  if (p) return p.year;
   const m = stored.trim().match(/^(\d{4})/);
   return m ? Number(m[1]) : null;
+}
+
+/** Ascending sort key; undated photos sort last. */
+export function photoDateSortKey(stored: string | undefined | null): number {
+  if (!stored?.trim()) return Number.MAX_SAFE_INTEGER;
+  const p = parseStoredPhotoDate(stored);
+  if (!p) return Number.MAX_SAFE_INTEGER;
+  switch (p.kind) {
+    case "exact":
+      return p.year * 10_000 + p.month * 100 + p.day;
+    case "month":
+      return p.year * 10_000 + p.month * 100;
+    case "year":
+    case "circa":
+      return p.year * 10_000;
+    case "range":
+      return p.year * 10_000;
+  }
+}
+
+export function comparePhotosByDate(
+  a: { metadata: { date?: string }; filename: string },
+  b: { metadata: { date?: string }; filename: string },
+): number {
+  const ka = photoDateSortKey(a.metadata.date);
+  const kb = photoDateSortKey(b.metadata.date);
+  if (ka !== kb) return ka - kb;
+  return a.filename.localeCompare(b.filename, undefined, { sensitivity: "base" });
+}
+
+export function sortPhotosByDate<T extends { metadata: { date?: string }; filename: string }>(
+  photos: T[],
+): T[] {
+  return [...photos].sort(comparePhotosByDate);
 }
 
 export function exactDateInputValue(fields: PhotoDateFields): string {
