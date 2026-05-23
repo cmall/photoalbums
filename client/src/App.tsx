@@ -343,6 +343,29 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
     });
   }, [route, folders, libraryLoading, loadAlbumPhotos, applyAlbumPhotosToFolder]);
 
+  /** Manage hub lists every photo in each album; summary only includes 4 previews per folder. */
+  useEffect(() => {
+    if (route.kind !== "manage-hub" || libraryLoading) return;
+    const pending = folders.filter((f) => !f.needsImport && f.photoCount > 0 && !f.photosLoaded);
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      for (const f of pending) {
+        if (cancelled) return;
+        try {
+          await loadAlbumPhotos(f.name);
+        } catch (e) {
+          if (e instanceof AuthRequiredError) return;
+          if (!cancelled) setErr(String(e));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, folders, libraryLoading, loadAlbumPhotos]);
+
   useEffect(() => {
     if (route.kind !== "photo" || folderFromRel(route.rel)) return;
     void loadRootPhotos().catch((e) => {
