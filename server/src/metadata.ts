@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { resolveSafeUnderRoot, toRelFromRoot } from "./paths.js";
 
 import { getDb } from "./db.js";
+import { writePhotoMetadataToExif } from "./exif-metadata.js";
 
 const trimEmpty = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
@@ -85,6 +86,11 @@ export async function writeSidecarJson(imageAbs: string, data: PhotoMetadata) {
   await fs.writeFile(sc, JSON.stringify(cleaned, null, 2), "utf8");
   const imageRel = toRelFromRoot(imageAbs);
   updateAssetMetadataInDb(imageRel, cleaned);
+  try {
+    await writePhotoMetadataToExif(imageAbs, cleaned);
+  } catch (err) {
+    console.warn(`EXIF metadata write failed for ${imageRel}:`, err);
+  }
   return toRelFromRoot(sc);
 }
 

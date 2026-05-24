@@ -23,6 +23,10 @@ export const config = {
   /** Set to 1 when serving over HTTPS so session cookies use the Secure flag. */
   secureCookies:
     process.env.APP_SECURE_COOKIES === "1" || process.env.APP_SECURE_COOKIES === "true",
+  /** Embed date/location/description into image EXIF/IPTC/XMP when metadata is saved. */
+  writeMetadataToExif:
+    process.env.WRITE_METADATA_TO_EXIF !== "0" &&
+    process.env.WRITE_METADATA_TO_EXIF !== "false",
 };
 
 export function assertConfig() {

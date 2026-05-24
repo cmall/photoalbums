@@ -31,6 +31,7 @@ import {
   scheduleFolderThumbnailWarm,
   syncAssetsFromDisk,
 } from "./library.js";
+import { shutdownExifTool } from "./exif-metadata.js";
 import { compareByDateThenFilename } from "./photo-date.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
 import { repoRootDir } from "./install-paths.js";
@@ -624,7 +625,16 @@ export async function start() {
   server.log.info({ syncDelayMs }, "Background library sync scheduled");
 }
 
-start().catch((err) => {
+start().catch(async (err) => {
   console.error(err);
+  await shutdownExifTool().catch(() => {});
   process.exit(1);
 });
+
+async function shutdown() {
+  await shutdownExifTool().catch(() => {});
+  process.exit(0);
+}
+
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
