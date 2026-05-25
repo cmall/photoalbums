@@ -69,14 +69,6 @@ export type TagInfo = {
   normH: number | null;
 };
 
-export type FaceSuggestion = {
-  normX: number;
-  normY: number;
-  normW: number;
-  normH: number;
-  confidence: number;
-};
-
 export type LibraryPhoto = {
   relPath: string;
   filename: string;
@@ -357,13 +349,6 @@ export async function patchTagPosition(tagId: string, normX: number, normY: numb
     body: JSON.stringify({ tagId, normX, normY }),
   });
   if (!r.ok) throw new Error(await readApiError(r));
-}
-
-export async function fetchFaceSuggestions(relPath: string): Promise<FaceSuggestion[]> {
-  const r = await apiFetch(`/api/face-suggestions?rel=${encodeURIComponent(relPath)}`);
-  if (!r.ok) throw new Error(await readApiError(r));
-  const j = (await r.json()) as { faces: FaceSuggestion[]; disabled?: boolean };
-  return j.faces ?? [];
 }
 
 export async function photosForPerson(personId: string): Promise<{ relPath: string }[]> {
