@@ -45,3 +45,26 @@ export function imageRenderBox(img: HTMLImageElement) {
     height,
   };
 }
+
+export type ImageMarkerOverlayBox = {
+  leftPct: number;
+  topPct: number;
+  widthPct: number;
+  heightPct: number;
+};
+
+/** Overlay box as percentages of the image element (object-fit: contain). */
+export function imageMarkerOverlayBox(img: HTMLImageElement): ImageMarkerOverlayBox {
+  const w = img.clientWidth;
+  const h = img.clientHeight;
+  if (w <= 0 || h <= 0) {
+    return { leftPct: 0, topPct: 0, widthPct: 100, heightPct: 100 };
+  }
+  const box = imageRenderBox(img);
+  return {
+    leftPct: (box.left / w) * 100,
+    topPct: (box.top / h) * 100,
+    widthPct: (box.width / w) * 100,
+    heightPct: (box.height / h) * 100,
+  };
+}

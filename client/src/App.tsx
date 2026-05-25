@@ -38,6 +38,7 @@ import {
 } from "./api";
 import { folderFromRel, type AppRoute } from "./app-url";
 import { pointerClientToImageNorm } from "./viewer-image-coords";
+import { useViewerImageLayout } from "./useViewerImageLayout";
 import { PhotoDateEditor } from "./PhotoDateEditor";
 import { PhotoThumb } from "./PhotoThumb";
 import { sortPhotosByDate } from "./photo-date";
@@ -996,6 +997,11 @@ function ViewerModal({
     return mediaUrl(photo.relPath, "web", imageCacheEpoch);
   })();
 
+  const markerOverlay = useViewerImageLayout(
+    imgRef,
+    `${photo.relPath}:${imageSource}`,
+  );
+
   const displayTags = useMemo(() => {
     const merged = (photo.tags ?? []).map((t) => ({
       ...t,
@@ -1208,32 +1214,43 @@ function ViewerModal({
             >
               <div className="viewer-img-frame" onPointerDown={onImagePointerDown}>
                 <img ref={imgRef} src={viewerImgSrc} alt="" className="viewer-img" />
-                {imageSource === "enhanced" &&
-                  displayTags.map((t) => (
-                    <button
-                      key={t.tagId}
-                      type="button"
-                      className={
-                        "marker marker-face" +
-                        (hoveredViewerTagId === t.tagId ? " marker-hovered" : "")
-                      }
-                      style={{ left: `${t.normX * 100}%`, top: `${t.normY * 100}%` }}
-                      title={`Drag to move, or click to remove — ${t.fullName}`}
-                      onPointerDown={(e) => handleMarkerPointerDown(e, t)}
-                      onPointerMove={(e) => handleMarkerPointerMove(e, t)}
-                      onPointerUp={(e) => void finishMarkerPointer(e, t)}
-                      onPointerCancel={(e) => void finishMarkerPointer(e, t)}
-                    >
-                      <span className="marker-dot" />
-                    </button>
-                  ))}
-                {imageSource === "enhanced" && pending && (
-                  <span
-                    className="marker pending"
-                    style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
+                {imageSource === "enhanced" && (
+                  <div
+                    className="viewer-img-markers"
+                    style={{
+                      left: `${markerOverlay.leftPct}%`,
+                      top: `${markerOverlay.topPct}%`,
+                      width: `${markerOverlay.widthPct}%`,
+                      height: `${markerOverlay.heightPct}%`,
+                    }}
                   >
-                    <span className="marker-dot" />
-                  </span>
+                    {displayTags.map((t) => (
+                      <button
+                        key={t.tagId}
+                        type="button"
+                        className={
+                          "marker marker-face" +
+                          (hoveredViewerTagId === t.tagId ? " marker-hovered" : "")
+                        }
+                        style={{ left: `${t.normX * 100}%`, top: `${t.normY * 100}%` }}
+                        title={`Drag to move, or click to remove — ${t.fullName}`}
+                        onPointerDown={(e) => handleMarkerPointerDown(e, t)}
+                        onPointerMove={(e) => handleMarkerPointerMove(e, t)}
+                        onPointerUp={(e) => void finishMarkerPointer(e, t)}
+                        onPointerCancel={(e) => void finishMarkerPointer(e, t)}
+                      >
+                        <span className="marker-dot" />
+                      </button>
+                    ))}
+                    {pending && (
+                      <span
+                        className="marker pending"
+                        style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
+                      >
+                        <span className="marker-dot" />
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </ViewerImageZoom>
