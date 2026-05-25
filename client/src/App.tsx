@@ -36,7 +36,7 @@ import {
   type PhotoMetadata,
   type TagInfo,
 } from "./api";
-import { folderFromRel } from "./app-url";
+import { folderFromRel, type AppRoute } from "./app-url";
 import { PhotoDateEditor } from "./PhotoDateEditor";
 import { PhotoThumb } from "./PhotoThumb";
 import { sortPhotosByDate } from "./photo-date";
@@ -165,7 +165,6 @@ type AppView = "gallery" | "manage";
 
 export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const { route, navigate } = useAppRoute();
-  const appView: AppView = route.kind === "manage-hub" || route.kind === "manage-album" ? "manage" : "gallery";
   const galleryScope = route.kind === "gallery-album" ? route.folder : "";
   const openAlbum = route.kind === "manage-album" ? route.folder : null;
   const lightboxIndex =
@@ -196,8 +195,21 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   const [imageCacheEpoch, setImageCacheEpoch] = useState(0);
   const bumpImageCache = useCallback(() => setImageCacheEpoch((n) => n + 1), []);
   const albumCacheRef = useRef<Map<string, LibraryPhoto[]>>(new Map());
+  /** Manage route to restore when closing the photo viewer. */
+  const [photoReturnRoute, setPhotoReturnRoute] = useState<AppRoute | null>(null);
   const [rootPhotosLoaded, setRootPhotosLoaded] = useState(false);
   const [fetchedViewerPhoto, setFetchedViewerPhoto] = useState<LibraryPhoto | null>(null);
+
+  const appView: AppView = useMemo(() => {
+    if (route.kind === "manage-hub" || route.kind === "manage-album") return "manage";
+    if (
+      route.kind === "photo" &&
+      (photoReturnRoute?.kind === "manage-hub" || photoReturnRoute?.kind === "manage-album")
+    ) {
+      return "manage";
+    }
+    return "gallery";
+  }, [route, photoReturnRoute]);
 
   const applyAlbumPhotosToFolder = useCallback((folderName: string, photos: LibraryPhoto[]) => {
     albumCacheRef.current.set(folderName, photos);
@@ -810,7 +822,16 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
                   key={p.relPath}
                   photo={p}
                   imageCacheEpoch={imageCacheEpoch}
-                  onOpen={(ph) => navigate({ kind: "photo", rel: ph.relPath })}
+                  onOpen={(ph) => {
+                    const returnTo: AppRoute =
+                      route.kind === "manage-album"
+                        ? route
+                        : route.kind === "manage-hub"
+                          ? route
+                          : { kind: "manage-album", folder: row.id };
+                    setPhotoReturnRoute(returnTo);
+                    navigate({ kind: "photo", rel: ph.relPath });
+                  }}
                 />
               ))}
             </div>
@@ -831,7 +852,10 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           onNavigate={(i) =>
             navigate({ kind: "gallery-album", folder: galleryScope, lightboxIndex: i })
           }
-          onEditDetails={(p) => navigate({ kind: "photo", rel: p.relPath })}
+          onEditDetails={(p) => {
+            setPhotoReturnRoute(null);
+            navigate({ kind: "photo", rel: p.relPath });
+          }}
         />
       )}
 
@@ -885,6 +909,12 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
           imageCacheEpoch={imageCacheEpoch}
           onDerivativesRefreshed={bumpImageCache}
           onClose={() => {
+            const ret = photoReturnRoute;
+            setPhotoReturnRoute(null);
+            if (ret?.kind === "manage-hub" || ret?.kind === "manage-album") {
+              navigate(ret);
+              return;
+            }
             const folder = folderFromRel(viewerPhoto.relPath);
             if (folder) navigate({ kind: "gallery-album", folder });
             else navigate({ kind: "gallery-hub" });
