@@ -1113,10 +1113,10 @@ button.sugg {
 }
 
 .modal.viewer-modal .viewer-img-inner {
-  position: absolute !important;
-  inset: 0 !important;
-  width: auto !important;
-  height: auto !important;
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
   display: block !important;
   margin: 0 !important;
   padding: 0 !important;
@@ -1125,11 +1125,15 @@ button.sugg {
 .modal.viewer-modal .viewer-img-stage {
   position: absolute;
   inset: 0;
+  width: auto;
+  height: auto;
 }
 
 .modal.viewer-modal .viewer-img-frame {
   position: absolute;
   inset: 0;
+  width: auto;
+  height: auto;
   line-height: 0;
 }
 

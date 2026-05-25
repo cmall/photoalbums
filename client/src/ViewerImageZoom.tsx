@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import type { ReactZoomPanPinchContentRef } from "react-zoom-pan-pinch";
@@ -6,8 +6,28 @@ import type { ReactZoomPanPinchContentRef } from "react-zoom-pan-pinch";
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 
+/** Override react-zoom-pan-pinch fit-content defaults so the pane fills completely. */
+const VIEWER_WRAP_STYLE: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+  maxWidth: "none",
+  maxHeight: "none",
+};
+
+const VIEWER_CONTENT_STYLE: CSSProperties = {
+  ...VIEWER_WRAP_STYLE,
+  display: "block",
+  transformOrigin: "0 0",
+};
+
 function fitView(ref: ReactZoomPanPinchContentRef | null | undefined) {
-  ref?.centerView(MIN_SCALE, 0);
+  if (!ref) return;
+  // Fill the pane at 1:1 — do not use centerView (it centers undersized content without scaling up).
+  requestAnimationFrame(() => {
+    ref.setTransform(0, 0, MIN_SCALE, 0);
+  });
 }
 
 export function ViewerImageZoom({
@@ -46,12 +66,18 @@ export function ViewerImageZoom({
 
   useEffect(() => {
     const img = imageRef?.current;
+    const pane = img?.closest(".viewer-img-pane");
     if (!img) return;
-    const run = () => applyFit();
+    const run = () => fitView(transformRef?.current);
     img.addEventListener("load", run);
     if (img.complete) run();
-    return () => img.removeEventListener("load", run);
-  }, [resetKey, imageRef, applyFit]);
+    const ro = pane ? new ResizeObserver(run) : null;
+    if (pane) ro!.observe(pane);
+    return () => {
+      img.removeEventListener("load", run);
+      ro?.disconnect();
+    };
+  }, [resetKey, imageRef, transformRef]);
 
   const zoomed = zoomScale > MIN_SCALE + 0.01;
 
@@ -96,8 +122,8 @@ export function ViewerImageZoom({
           initialPositionY={0}
           minScale={MIN_SCALE}
           maxScale={MAX_SCALE}
-          centerOnInit
-          centerZoomedOut
+          centerOnInit={false}
+          centerZoomedOut={false}
           limitToBounds
           smooth
           wheel={{ step: 0.12, disabled: interactionDisabled }}
@@ -123,6 +149,8 @@ export function ViewerImageZoom({
               "viewer-img-wrap" + (tagging ? " tagging" : "") + (zoomed ? " zoomed" : "")
             }
             contentClass="viewer-img-inner"
+            wrapperStyle={VIEWER_WRAP_STYLE}
+            contentStyle={VIEWER_CONTENT_STYLE}
           >
             <div
               className="viewer-img-stage"
