@@ -1,5 +1,5 @@
 import * as blazeface from "@tensorflow-models/blazeface";
-import * as tf from "@tensorflow/tfjs-node";
+import * as tf from "@tensorflow/tfjs";
 import sharp from "sharp";
 import { config } from "./config.js";
 import { getDb } from "./db.js";
@@ -20,10 +20,21 @@ const MIN_BOX = 0.04;
 const TAG_NEAR = 0.07;
 
 let modelPromise: ReturnType<typeof blazeface.load> | null = null;
+let backendPromise: Promise<void> | null = null;
+
+function ensureBackend() {
+  if (!backendPromise) {
+    backendPromise = (async () => {
+      await tf.setBackend("cpu");
+      await tf.ready();
+    })();
+  }
+  return backendPromise;
+}
 
 function loadModel() {
   if (!modelPromise) {
-    modelPromise = blazeface.load();
+    modelPromise = ensureBackend().then(() => blazeface.load());
   }
   return modelPromise;
 }
