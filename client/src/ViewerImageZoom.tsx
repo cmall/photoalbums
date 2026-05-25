@@ -90,6 +90,7 @@ export function ViewerImageZoom({
         <TransformWrapper
           key={resetKey}
           ref={transformRef}
+          disabled={tagging}
           initialScale={1}
           initialPositionX={0}
           initialPositionY={0}
@@ -100,7 +101,11 @@ export function ViewerImageZoom({
           limitToBounds
           smooth
           wheel={{ step: 0.12, disabled: interactionDisabled }}
-          panning={{ disabled: interactionDisabled, velocityDisabled: true }}
+          panning={{
+            disabled: interactionDisabled,
+            velocityDisabled: true,
+            allowLeftClickPan: !interactionDisabled,
+          }}
           pinch={{ disabled: interactionDisabled }}
           doubleClick={{ disabled: interactionDisabled, mode: "toggle" }}
           onInit={(ref) => {

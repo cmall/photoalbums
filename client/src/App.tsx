@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactZoomPanPinchContentRef } from "react-zoom-pan-pinch";
-import type { MouseEvent, PointerEvent } from "react";
+import type { PointerEvent } from "react";
 import { GalleryLightbox } from "./GalleryLightbox";
 import { MasonryGallery } from "./MasonryGallery";
 import { GalleryAlbumHub } from "./GalleryAlbumHub";
@@ -37,6 +37,7 @@ import {
   type TagInfo,
 } from "./api";
 import { folderFromRel, type AppRoute } from "./app-url";
+import { pointerClientToImageNorm } from "./viewer-image-coords";
 import { PhotoDateEditor } from "./PhotoDateEditor";
 import { PhotoThumb } from "./PhotoThumb";
 import { sortPhotosByDate } from "./photo-date";
@@ -1038,12 +1039,9 @@ function ViewerModal({
   function pointerClientToNorm(clientX: number, clientY: number) {
     const el = imgRef.current;
     if (!el) return null;
-    const r = el.getBoundingClientRect();
-    const w = r.width || 1;
-    const h = r.height || 1;
-    const x = (clientX - r.left) / w;
-    const y = (clientY - r.top) / h;
-    return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+    const norm = pointerClientToImageNorm(clientX, clientY, el);
+    if (!norm) return null;
+    return { x: Math.min(1, Math.max(0, norm.x)), y: Math.min(1, Math.max(0, norm.y)) };
   }
 
   function handleMarkerPointerDown(e: PointerEvent<HTMLButtonElement>, t: TagInfo) {
@@ -1138,14 +1136,13 @@ function ViewerModal({
     };
   }, [debouncedName]);
 
-  function onImageClick(e: MouseEvent<HTMLImageElement>) {
-    if (imageSource !== "enhanced" || !tagMode || !imgRef.current) return;
-    const el = imgRef.current;
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return;
-    setPending({ x, y });
+  function onImagePointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (imageSource !== "enhanced" || !tagMode || !imgRef.current || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest(".marker")) return;
+    const norm = pointerClientToImageNorm(e.clientX, e.clientY, imgRef.current);
+    if (!norm) return;
+    e.stopPropagation();
+    setPending(norm);
     setNameInput("");
   }
 
@@ -1209,43 +1206,36 @@ function ViewerModal({
                 </div>
               }
             >
-              <img
-                ref={imgRef}
-                src={viewerImgSrc}
-                alt=""
-                className="viewer-img"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onImageClick(e);
-                }}
-              />
-              {imageSource === "enhanced" &&
-              displayTags.map((t) => (
-                <button
-                  key={t.tagId}
-                  type="button"
-                  className={
-                    "marker marker-face" +
-                    (hoveredViewerTagId === t.tagId ? " marker-hovered" : "")
-                  }
-                  style={{ left: `${t.normX * 100}%`, top: `${t.normY * 100}%` }}
-                  title={`Drag to move, or click to remove — ${t.fullName}`}
-                  onPointerDown={(e) => handleMarkerPointerDown(e, t)}
-                  onPointerMove={(e) => handleMarkerPointerMove(e, t)}
-                  onPointerUp={(e) => void finishMarkerPointer(e, t)}
-                  onPointerCancel={(e) => void finishMarkerPointer(e, t)}
-                >
-                  <span className="marker-dot" />
-                </button>
-              ))}
-              {imageSource === "enhanced" && pending && (
-                <span
-                  className="marker pending"
-                  style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
-                >
-                  <span className="marker-dot" />
-                </span>
-              )}
+              <div className="viewer-img-frame" onPointerDown={onImagePointerDown}>
+                <img ref={imgRef} src={viewerImgSrc} alt="" className="viewer-img" />
+                {imageSource === "enhanced" &&
+                  displayTags.map((t) => (
+                    <button
+                      key={t.tagId}
+                      type="button"
+                      className={
+                        "marker marker-face" +
+                        (hoveredViewerTagId === t.tagId ? " marker-hovered" : "")
+                      }
+                      style={{ left: `${t.normX * 100}%`, top: `${t.normY * 100}%` }}
+                      title={`Drag to move, or click to remove — ${t.fullName}`}
+                      onPointerDown={(e) => handleMarkerPointerDown(e, t)}
+                      onPointerMove={(e) => handleMarkerPointerMove(e, t)}
+                      onPointerUp={(e) => void finishMarkerPointer(e, t)}
+                      onPointerCancel={(e) => void finishMarkerPointer(e, t)}
+                    >
+                      <span className="marker-dot" />
+                    </button>
+                  ))}
+                {imageSource === "enhanced" && pending && (
+                  <span
+                    className="marker pending"
+                    style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
+                  >
+                    <span className="marker-dot" />
+                  </span>
+                )}
+              </div>
             </ViewerImageZoom>
             <p className="viewer-nav-hint">← → album · scroll, pinch, or double-click to zoom</p>
             {displayTags.length > 0 && (
@@ -1366,16 +1356,16 @@ function ViewerModal({
               <input
                 type="checkbox"
                 checked={tagMode}
-                disabled={viewScale > 1.01}
+                disabled={viewScale > 1.05}
                 onChange={() => {
-                  if (viewScale > 1.01) return;
+                  if (viewScale > 1.05) return;
                   setTagMode((v) => !v);
                   setPending(null);
                 }}
               />
               Tag someone (click face next)
             </label>
-            {viewScale > 1.01 && (
+            {viewScale > 1.05 && (
               <p className="hint tag-drag-hint">Reset zoom to Fit to tag faces.</p>
             )}
             <p className="hint tag-drag-hint">Drag a dot on the photo to reposition it, or click without dragging to remove.</p>
