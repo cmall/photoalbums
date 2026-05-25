@@ -1089,18 +1089,10 @@ button.sugg {
 }
 
 .modal.viewer-modal .viewer-img-pane {
+  position: relative;
   flex: 1 1 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-}
-
-.modal.viewer-modal .viewer-img-pane > * {
-  flex: 1 1 0;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
 }
 
 .modal.viewer-modal .viewer-toolbar,
@@ -1109,34 +1101,35 @@ button.sugg {
   flex-shrink: 0;
 }
 
+/* react-zoom-pan-pinch defaults to fit-content — force fill the pane. */
 .modal.viewer-modal .viewer-img-wrap {
-  flex: 1 1 0;
-  min-height: 0;
-  width: 100% !important;
-  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
   max-height: none !important;
   overflow: hidden !important;
 }
 
 .modal.viewer-modal .viewer-img-inner {
-  width: 100% !important;
-  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .modal.viewer-modal .viewer-img-stage {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute;
+  inset: 0;
 }
 
 .modal.viewer-modal .viewer-img-frame {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   line-height: 0;
 }
 
@@ -1145,6 +1138,7 @@ button.sugg {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  pointer-events: auto;
 }
 
 .viewer-img-markers {
