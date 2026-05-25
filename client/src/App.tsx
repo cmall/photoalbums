@@ -30,6 +30,8 @@ import {
   renameFolder,
   searchPersons,
   startFolderImportApi,
+  fetchFaceSuggestions,
+  type FaceSuggestion,
   type LibraryFolder,
   type LibraryPhoto,
   type Person,
@@ -932,6 +934,10 @@ export function App({ onAuthLost }: { onAuthLost?: () => void }) {
   );
 }
 
+function suggestionKey(s: { normX: number; normY: number }) {
+  return `${s.normX},${s.normY}`;
+}
+
 function ViewerModal({
   photo,
   navPhotos,
@@ -964,6 +970,10 @@ function ViewerModal({
   const [meta, setMeta] = useState<PhotoMetadata>(photo.metadata);
   const [tagMode, setTagMode] = useState(false);
   const [pending, setPending] = useState<{ x: number; y: number } | null>(null);
+  const [faceSuggestions, setFaceSuggestions] = useState<FaceSuggestion[]>([]);
+  const [faceDetectLoading, setFaceDetectLoading] = useState(false);
+  const [faceDetectMsg, setFaceDetectMsg] = useState<string | null>(null);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(() => new Set());
   const [nameInput, setNameInput] = useState("");
   const debouncedName = useDebounced(nameInput, 200);
   const [nameSuggestions, setNameSuggestions] = useState<Person[]>([]);
@@ -1119,7 +1129,52 @@ function ViewerModal({
     markerDragRef.current = null;
     setImageSource("enhanced");
     setViewScale(1);
+    setFaceSuggestions([]);
+    setFaceDetectMsg(null);
+    setDismissedSuggestions(new Set());
+    setPending(null);
+    setTagMode(false);
   }, [photo.relPath]);
+
+  const visibleFaceSuggestions = useMemo(() => {
+    return faceSuggestions.filter((s) => !dismissedSuggestions.has(suggestionKey(s)));
+  }, [faceSuggestions, dismissedSuggestions]);
+
+  async function runFaceDetect() {
+    if (imageSource !== "enhanced") return;
+    setFaceDetectLoading(true);
+    setFaceDetectMsg(null);
+    try {
+      const faces = await fetchFaceSuggestions(photo.relPath);
+      setFaceSuggestions(faces);
+      setDismissedSuggestions(new Set());
+      setFaceDetectMsg(
+        faces.length === 0
+          ? "No faces detected — click on the photo to tag manually."
+          : `Found ${faces.length} possible face${faces.length === 1 ? "" : "s"}. Click a ring to name someone.`,
+      );
+      if (faces.length > 0) setTagMode(true);
+    } catch (e) {
+      setFaceDetectMsg(e instanceof Error ? e.message : String(e));
+      setFaceSuggestions([]);
+    } finally {
+      setFaceDetectLoading(false);
+    }
+  }
+
+  function pickFaceSuggestion(s: FaceSuggestion) {
+    setTagMode(true);
+    setPending({ x: s.normX, y: s.normY });
+    setNameInput("");
+  }
+
+  function dismissFaceSuggestion(s: FaceSuggestion) {
+    setDismissedSuggestions((prev) => new Set(prev).add(suggestionKey(s)));
+    if (pending && pending.x === s.normX && pending.y === s.normY) {
+      setPending(null);
+      setNameInput("");
+    }
+  }
 
   useEffect(() => {
     if (tagMode) {
@@ -1170,6 +1225,9 @@ function ViewerModal({
     setPending(null);
     setNameInput("");
     setTagMode(false);
+    setFaceSuggestions((prev) =>
+      prev.filter((s) => Math.hypot(s.normX - pending.x, s.normY - pending.y) > 0.07),
+    );
     onRefresh();
   }
 
@@ -1250,6 +1308,25 @@ function ViewerModal({
                         <span className="marker-dot" />
                       </span>
                     )}
+                    {visibleFaceSuggestions.map((s) => (
+                      <button
+                        key={suggestionKey(s)}
+                        type="button"
+                        className="marker marker-suggested"
+                        style={{ left: `${s.normX * 100}%`, top: `${s.normY * 100}%` }}
+                        title="Click to tag this face (right-click to dismiss)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pickFaceSuggestion(s);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          dismissFaceSuggestion(s);
+                        }}
+                      >
+                        <span className="marker-ring" aria-hidden />
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1382,6 +1459,17 @@ function ViewerModal({
               />
               Tag someone (click face next)
             </label>
+            {imageSource === "enhanced" && (
+              <button
+                type="button"
+                className="viewer-tool-btn"
+                disabled={faceDetectLoading || viewScale > 1.05}
+                onClick={() => void runFaceDetect()}
+              >
+                {faceDetectLoading ? "Finding faces…" : "Find faces"}
+              </button>
+            )}
+            {faceDetectMsg && <p className="hint tag-drag-hint">{faceDetectMsg}</p>}
             {viewScale > 1.05 && (
               <p className="hint tag-drag-hint">Reset zoom to Fit to tag faces.</p>
             )}

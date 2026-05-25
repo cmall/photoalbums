@@ -1386,6 +1386,21 @@ button.sugg {
   background: #ffb020;
 }
 
+.marker-suggested {
+  cursor: pointer;
+  padding: 0;
+}
+
+.marker-suggested .marker-ring {
+  display: block;
+  width: 28px;
+  height: 36px;
+  margin: -18px 0 0 -14px;
+  border: 2px dashed #ffb020;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
 .marker-face {
   cursor: grab;
   touch-action: none;

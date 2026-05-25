@@ -32,6 +32,7 @@ import {
   syncAssetsFromDisk,
 } from "./library.js";
 import { shutdownExifTool } from "./exif-metadata.js";
+import { detectFaceSuggestions } from "./face-detect.js";
 import { compareByDateThenFilename } from "./photo-date.js";
 import { defaultYearForFolder } from "./folder-default-year.js";
 import { repoRootDir } from "./install-paths.js";
@@ -506,6 +507,21 @@ export async function buildServer() {
     const r = db.prepare("DELETE FROM person_tags WHERE id = ?").run(id);
     if (r.changes === 0) return reply.status(404).send({ error: "not found" });
     return { ok: true };
+  });
+
+  app.get("/api/face-suggestions", async (req, reply) => {
+    const q = req.query as { rel?: string };
+    if (!q.rel) return reply.status(400).send({ error: "rel required" });
+    if (!config.faceDetectionEnabled) {
+      return { faces: [], disabled: true };
+    }
+    try {
+      const faces = await detectFaceSuggestions(q.rel);
+      return { faces };
+    } catch (err) {
+      req.log.error({ err, rel: q.rel }, "Face detection failed");
+      return reply.status(500).send({ error: "Face detection failed" });
+    }
   });
 
   app.get("/api/media", async (req, reply) => {

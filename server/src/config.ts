@@ -27,6 +27,9 @@ export const config = {
   writeMetadataToExif:
     process.env.WRITE_METADATA_TO_EXIF !== "0" &&
     process.env.WRITE_METADATA_TO_EXIF !== "false",
+  /** BlazeFace suggestions for manual person tagging (set FACE_DETECTION=0 to disable). */
+  faceDetectionEnabled:
+    process.env.FACE_DETECTION !== "0" && process.env.FACE_DETECTION !== "false",
 };
 
 export function assertConfig() {
